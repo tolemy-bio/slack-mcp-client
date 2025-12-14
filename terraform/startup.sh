@@ -135,15 +135,11 @@ systemctl start slack-mcp-client
 echo ""
 echo "=== Installing Orby MCP Server ==="
 
-# Clone the orby repository
-echo "Cloning orby repository..."
-mkdir -p /opt
-cd /opt
-if [ -d "tolemy-core" ]; then
-  rm -rf tolemy-core
-fi
-git clone https://github.com/tolemy-bio/tolemy-core.git
-cd tolemy-core/orby
+# Download orby code from GCS bucket (uploaded during deployment)
+echo "Downloading orby code..."
+mkdir -p /opt/tolemy-core/orby
+cd /opt/tolemy-core/orby
+gsutil -m rsync -r gs://orby-deployment-artifacts/orby/ .
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
