@@ -63,7 +63,10 @@ type LLMConfig struct {
 	CustomPromptFile   string                       `json:"customPromptFile,omitempty"`
 	ReplaceToolPrompt  bool                         `json:"replaceToolPrompt,omitempty"`
 	MaxAgentIterations int                          `json:"maxAgentIterations,omitempty"` // Maximum agent iterations (default: 20)
-	Providers          map[string]LLMProviderConfig `json:"providers"`
+	// Legacy fields for backward compatibility
+	Temperature        *float64                     `json:"temperature,omitempty"`        // Deprecated: Use providers[provider].temperature
+	MaxTokens          *int                         `json:"maxTokens,omitempty"`          // Deprecated: Use providers[provider].maxTokens
+	Providers          map[string]LLMProviderConfig `json:"providers,omitempty"`
 }
 
 // LLMProviderConfig contains provider-specific settings
@@ -299,6 +302,9 @@ func (c *Config) applyLLMDefaults() {
 	if c.LLM.Providers == nil {
 		c.LLM.Providers = make(map[string]LLMProviderConfig)
 	}
+	
+	// Migrate legacy temperature and maxTokens to provider-specific config
+	c.migrateLegacyLLMFields()
 
 	// Set default provider configurations if they don't exist
 	if _, exists := c.LLM.Providers[ProviderOpenAI]; !exists {
@@ -322,6 +328,41 @@ func (c *Config) applyLLMDefaults() {
 			Temperature: 0.7,
 		}
 	}
+}
+
+// migrateLegacyLLMFields migrates legacy temperature and maxTokens to provider-specific config
+func (c *Config) migrateLegacyLLMFields() {
+	// Only migrate if legacy fields are set
+	if c.LLM.Temperature == nil && c.LLM.MaxTokens == nil {
+		return
+	}
+	
+	// Get or create the provider config for the current provider
+	providerConfig, exists := c.LLM.Providers[c.LLM.Provider]
+	if !exists {
+		providerConfig = LLMProviderConfig{}
+	}
+	
+	// Migrate temperature if set
+	if c.LLM.Temperature != nil {
+		if providerConfig.Temperature == 0 {
+			providerConfig.Temperature = *c.LLM.Temperature
+		}
+	}
+	
+	// Migrate maxTokens if set
+	if c.LLM.MaxTokens != nil {
+		if providerConfig.MaxTokens == 0 {
+			providerConfig.MaxTokens = *c.LLM.MaxTokens
+		}
+	}
+	
+	// Save the updated provider config
+	c.LLM.Providers[c.LLM.Provider] = providerConfig
+	
+	// Clear the legacy fields after migration
+	c.LLM.Temperature = nil
+	c.LLM.MaxTokens = nil
 }
 
 // applyRAGDefaults sets default RAG provider and configurations
