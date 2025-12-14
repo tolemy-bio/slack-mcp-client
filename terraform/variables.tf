@@ -58,9 +58,9 @@ variable "litellm_model" {
 
 # MCP Server (now co-located on VM)
 variable "mcp_server_url" {
-  description = "URL of the MCP server (deprecated - now localhost)"
+  description = "URL of the MCP server SSE endpoint (co-located on localhost)"
   type        = string
-  default     = "http://localhost:8080/rpc"
+  default     = "http://localhost:8080/mcp/sse"
 }
 
 variable "mcp_auth_token" {

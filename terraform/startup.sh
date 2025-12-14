@@ -84,9 +84,9 @@ cat > /etc/orby/slack-client-config.json << EOF
   },
   "mcpServers": {
     "orby": {
-      "mode": "http",
+      "mode": "sse",
       "url": "${MCP_SERVER_URL}",
-      "initialize_timeout_seconds": 10
+      "initialize_timeout_seconds": 30
     }
   },
   "agent": {
@@ -110,7 +110,7 @@ Requires=orby-mcp-server.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/slack-mcp-client --config /etc/orby/slack-client-config.json
+ExecStart=/usr/local/bin/slack-mcp-client --config /etc/orby/slack-client-config.json --metrics-port 9090
 Restart=always
 RestartSec=10
 StandardOutput=journal
