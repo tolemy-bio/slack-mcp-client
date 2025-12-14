@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/tuannvm/slack-mcp-client/internal/common/logging"
-	"github.com/tuannvm/slack-mcp-client/internal/config"
+	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

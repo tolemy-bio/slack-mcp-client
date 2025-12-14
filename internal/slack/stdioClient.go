@@ -6,7 +6,7 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
-	"github.com/tuannvm/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
 	"io"
 	"os"
 	"os/user"

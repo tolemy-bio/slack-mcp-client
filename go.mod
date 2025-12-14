@@ -1,4 +1,4 @@
-module github.com/tuannvm/slack-mcp-client
+module github.com/tolemy-bio/slack-mcp-client
 
 go 1.24.4
 

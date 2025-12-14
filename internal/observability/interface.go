@@ -2,8 +2,8 @@ package observability
 
 import (
 	"context"
-	"github.com/tuannvm/slack-mcp-client/internal/common/logging"
-	"github.com/tuannvm/slack-mcp-client/internal/config"
+	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/config"
 	"go.opentelemetry.io/otel/trace"
 	"time"
 )

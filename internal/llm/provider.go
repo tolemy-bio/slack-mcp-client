@@ -10,7 +10,7 @@ import (
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/tools"
-	"github.com/tuannvm/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
 )
 
 // Constants for provider types and names

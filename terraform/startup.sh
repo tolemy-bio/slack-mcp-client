@@ -30,7 +30,7 @@ export HOME=/root
 export GOPATH=/root/go
 export GOCACHE=/root/.cache/go-build
 export PATH=$PATH:$GOPATH/bin
-/usr/local/go/bin/go install github.com/tuannvm/slack-mcp-client/cmd@latest
+/usr/local/go/bin/go install github.com/tolemy-bio/slack-mcp-client/cmd@latest
 
 # Move binary to standard location
 mv /root/go/bin/cmd /usr/local/bin/slack-mcp-client

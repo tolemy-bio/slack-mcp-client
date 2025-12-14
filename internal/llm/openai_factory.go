@@ -6,9 +6,9 @@ import (
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
-	customErrors "github.com/tuannvm/slack-mcp-client/internal/common/errors"
-	"github.com/tuannvm/slack-mcp-client/internal/common/logging"
-	"github.com/tuannvm/slack-mcp-client/internal/monitoring"
+	customErrors "github.com/tolemy-bio/slack-mcp-client/internal/common/errors"
+	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/monitoring"
 )
 
 type handleContentEndFunc func(res *llms.ContentResponse)

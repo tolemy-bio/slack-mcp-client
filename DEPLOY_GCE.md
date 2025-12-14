@@ -164,7 +164,7 @@ SSH into the VM and run:
 
 ```bash
 sudo systemctl stop slack-mcp-client
-sudo /usr/local/go/bin/go install github.com/tuannvm/slack-mcp-client/cmd@latest
+sudo /usr/local/go/bin/go install github.com/tolemy-bio/slack-mcp-client/cmd@latest
 sudo mv /root/go/bin/cmd /usr/local/bin/slack-mcp-client
 sudo systemctl start slack-mcp-client
 ```
