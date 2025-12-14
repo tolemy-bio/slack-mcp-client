@@ -46,8 +46,11 @@ type Message struct {
 	Timestamp      time.Time // When the message was sent/received
 	SlackTimestamp string    // Slack's timestamp format (string)
 	UserID         string
+	FirstName      string
+	LastName       string
 	RealName       string
 	Email          string
+	Title          string
 }
 
 // NewClient creates a new Slack client instance.
@@ -257,7 +260,7 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 			profile, err := c.userFrontend.GetUserInfo(ev.User)
 			if err != nil {
 				c.logger.WarnKV("Failed to get user info", "user", ev.User, "error", err)
-				profile = &UserProfile{userId: ev.User, realName: "Unknown", email: ""}
+				profile = &UserProfile{UserID: ev.User, RealName: "Unknown", Email: ""}
 			}
 
 			parentTS := ev.ThreadTimeStamp
@@ -278,7 +281,7 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 				profile, err := c.userFrontend.GetUserInfo(ev.User)
 				if err != nil {
 					c.logger.WarnKV("Failed to get user info", "user", ev.User, "error", err)
-					profile = &UserProfile{userId: ev.User, realName: "Unknown", email: ""}
+					profile = &UserProfile{UserID: ev.User, RealName: "Unknown", Email: ""}
 				}
 
 				parentTS := ev.ThreadTimeStamp
@@ -301,7 +304,7 @@ func historyKey(channelID, threadTS string) string {
 }
 
 // addToHistory adds a message to the channel history
-func (c *Client) addToHistory(channelID, threadTS, timestamp, role, content, userID, realName, email string) {
+func (c *Client) addToHistory(channelID, threadTS, timestamp, role, content, userID, firstName, lastName, realName, email, title string) {
 	key := historyKey(channelID, threadTS)
 	history, exists := c.messageHistory[key]
 	if !exists {
@@ -315,8 +318,11 @@ func (c *Client) addToHistory(channelID, threadTS, timestamp, role, content, use
 		Timestamp:      time.Now(),
 		SlackTimestamp: timestamp,
 		UserID:         userID,
+		FirstName:      firstName,
+		LastName:       lastName,
 		RealName:       realName,
 		Email:          email,
+		Title:          title,
 	}
 	history = append(history, message)
 
@@ -354,7 +360,15 @@ func (c *Client) getContextFromHistory(channelID string, threadTS string) string
 			prefix := "User"
 			userInfo := ""
 			if msg.UserID != "" {
-				userInfo = fmt.Sprintf(" (User: %s, Name: %s, Email: %s)", msg.UserID, msg.RealName, msg.Email)
+				// Build display name from first/last name with fallbacks
+				name := fmt.Sprintf("%s %s", msg.FirstName, msg.LastName)
+				if name == " " {
+					name = msg.RealName
+				}
+				if name == "" {
+					name = msg.UserID
+				}
+				userInfo = fmt.Sprintf(" (User: %s, Name: %s, Email: %s, Title: %s)", msg.UserID, name, msg.Email, msg.Title)
 			}
 			sanitizedContent := strings.ReplaceAll(msg.Content, "\n", " \\n ")
 			contextBuilder.WriteString(fmt.Sprintf("%s: %s%s\n", prefix, sanitizedContent, userInfo))
@@ -373,12 +387,12 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	c.logger.DebugKV("User prompt", "text", userPrompt)
 
 	// Security validation check
-	securityResult := c.cfg.ValidateAccess(profile.userId, channelID)
+	securityResult := c.cfg.ValidateAccess(profile.UserID, channelID)
 	if !securityResult.Allowed {
 		// Log unauthorized access attempt if enabled
 		if c.cfg.Security.LogUnauthorized != nil && *c.cfg.Security.LogUnauthorized {
 			c.logger.WarnKV("security: Access denied",
-				"user_id", profile.userId,
+				"user_id", profile.UserID,
 				"channel_id", channelID,
 				"allowed", false,
 				"reason", securityResult.Reason,
@@ -398,7 +412,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	// Log successful access if security is enabled
 	if c.cfg.Security.Enabled {
 		c.logger.InfoKV("security: Access granted",
-			"user_id", profile.userId,
+			"user_id", profile.UserID,
 			"channel_id", channelID,
 			"allowed", true,
 			"reason", securityResult.Reason,
@@ -408,7 +422,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 
 	ctx, span := c.tracingHandler.StartTrace(context.Background(), "slack-user-interaction", userPrompt, map[string]string{
 		"session_id":   fmt.Sprintf("%s-%s", channelID, threadTS),
-		"user_email":   profile.email,
+		"user_email":   profile.Email,
 		"llm_provider": c.cfg.LLM.Provider,
 		"use_agent":    fmt.Sprintf("%t", c.cfg.LLM.UseAgent),
 	})
@@ -436,9 +450,9 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 				replyProfile, err := c.userFrontend.GetUserInfo(reply.User)
 				if err != nil {
 					c.logger.WarnKV("Failed to get user info", "user", reply.User, "error", err)
-					replyProfile = &UserProfile{userId: reply.User, realName: "Unknown", email: ""}
+					replyProfile = &UserProfile{UserID: reply.User, RealName: "Unknown", Email: ""}
 				}
-				c.addToHistory(channelID, threadTS, reply.Timestamp, role, reply.Text, replyProfile.userId, replyProfile.realName, replyProfile.email)
+				c.addToHistory(channelID, threadTS, reply.Timestamp, role, reply.Text, replyProfile.UserID, replyProfile.FirstName, replyProfile.LastName, replyProfile.RealName, replyProfile.Email, replyProfile.Title)
 				existingMessages[reply.Timestamp] = true
 			}
 		}
@@ -447,7 +461,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	// Get context from history
 	contextHistory := c.getContextFromHistory(channelID, threadTS)
 
-	c.addToHistory(channelID, threadTS, timestamp, "user", userPrompt, profile.userId, profile.realName, profile.email) // Add user message to history
+	c.addToHistory(channelID, threadTS, timestamp, "user", userPrompt, profile.UserID, profile.FirstName, profile.LastName, profile.RealName, profile.Email, profile.Title) // Add user message to history
 
 	// Show a temporary "typing" indicator
 	c.userFrontend.SendMessage(channelID, threadTS, c.cfg.Slack.ThinkingMessage)
@@ -523,15 +537,27 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 				"message_length": fmt.Sprintf("%d", len(msg)),
 			})
 
-			c.addToHistory(channelID, threadTS, "", "assistant", msg, "", "", "") // Original LLM response (tool call JSON)
+			c.addToHistory(channelID, threadTS, "", "assistant", msg, "", "", "", "", "", "") // Original LLM response (tool call JSON)
 			c.userFrontend.SendMessage(channelID, threadTS, msg)
 			c.tracingHandler.RecordSuccess(msgSpan, "Agent message sent successfully")
 			msgSpan.End()
 		}
 
 		startTime := time.Now()
+		// Construct user display name with fallbacks
+		userDisplayName := fmt.Sprintf("%s %s", profile.FirstName, profile.LastName)
+		if userDisplayName == " " { // Both empty
+			userDisplayName = profile.RealName
+		}
+		if userDisplayName == "" {
+			userDisplayName = profile.DisplayName
+		}
+		if userDisplayName == "" {
+			userDisplayName = profile.UserID // Ultimate fallback
+		}
+		
 		llmResponse, err := c.llmMCPBridge.CallLLMAgent(
-			profile.realName,
+			userDisplayName,
 			c.cfg.LLM.CustomPrompt,
 			userPrompt,
 			contextHistory,
@@ -748,8 +774,8 @@ func (c *Client) processLLMResponseAndReply(traceCtx context.Context, llmRespons
 			})
 
 		// Add history
-		c.addToHistory(channelID, threadTS, "", "assistant", llmResponse.Content, "", "", "") // Original LLM response (tool call JSON)
-		c.addToHistory(channelID, threadTS, "", "tool", finalResponse, "", "", "")            // Tool execution result
+		c.addToHistory(channelID, threadTS, "", "assistant", llmResponse.Content, "", "", "", "", "", "") // Original LLM response (tool call JSON)
+		c.addToHistory(channelID, threadTS, "", "tool", finalResponse, "", "", "", "", "", "")            // Tool execution result
 
 		c.logger.DebugKV("Re-prompting LLM", "prompt", rePrompt)
 
@@ -801,7 +827,7 @@ func (c *Client) processLLMResponseAndReply(traceCtx context.Context, llmRespons
 		repromptSpan.End()
 	} else {
 		// No tool was executed, add assistant response to history
-		c.addToHistory(channelID, threadTS, "", "assistant", finalResponse, "", "", "")
+		c.addToHistory(channelID, threadTS, "", "assistant", finalResponse, "", "", "", "", "", "")
 	}
 
 	// Start message sending span

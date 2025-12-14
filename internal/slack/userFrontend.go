@@ -88,9 +88,13 @@ func GetSlackClient(botToken, appToken string, stdLogger *logging.Logger, thinki
 }
 
 type UserProfile struct {
-	userId   string
-	realName string
-	email    string
+	UserID      string
+	FirstName   string
+	LastName    string
+	RealName    string
+	DisplayName string
+	Email       string
+	Title       string
 }
 
 type SlackClient struct {
@@ -150,9 +154,13 @@ func (slackClient *SlackClient) GetUserInfo(userID string) (*UserProfile, error)
 		return nil, customErrors.WrapSlackError(err, "fetch_user_profile_failed", "Failed to fetch user profile")
 	}
 	profile := &UserProfile{
-		userId:   userID,
-		realName: slackProfile.RealName,
-		email:    slackProfile.Email,
+		UserID:      userID,
+		FirstName:   slackProfile.FirstName,
+		LastName:    slackProfile.LastName,
+		RealName:    slackProfile.RealName,
+		DisplayName: slackProfile.DisplayName,
+		Email:       slackProfile.Email,
+		Title:       slackProfile.Title,
 	}
 	slackClient.userCache[userID] = profile
 	return profile, nil

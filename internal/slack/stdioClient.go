@@ -99,9 +99,13 @@ func (client StdioClient) GetUserInfo(userID string) (*UserProfile, error) {
 		return nil, fmt.Errorf("while getting current user: %w", err)
 	}
 	return &UserProfile{
-		userId:   userID,
-		realName: currentUser.Name,
-		email:    "",
+		UserID:      userID,
+		FirstName:   "",
+		LastName:    "",
+		RealName:    currentUser.Name,
+		DisplayName: currentUser.Username,
+		Email:       "",
+		Title:       "",
 	}, nil
 }
 
