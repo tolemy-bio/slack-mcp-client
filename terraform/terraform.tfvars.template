@@ -1,0 +1,25 @@
+# Orby Slack Client - Terraform Variables
+# Copy this to terraform.tfvars and fill in your values
+
+project_id = "gen-lang-client-0335698828"
+region     = "europe-west1"
+zone       = "europe-west1-b"
+
+# Machine type (e2-micro is free tier eligible)
+machine_type = "e2-micro"
+
+# Slack credentials
+slack_bot_token = "xoxb-your-bot-token"
+slack_app_token = "xapp-your-app-token"
+
+# LiteLLM credentials
+litellm_api_key  = "your-litellm-api-key"
+litellm_base_url = "https://litellm.tolemy.bio/v1"
+litellm_model    = "claude-3-5-haiku-20241022"
+
+# MCP Server
+mcp_server_url = "https://orby-mcp-server-228973215278.europe-west1.run.app/mcp"
+mcp_auth_token = "your-mcp-auth-token"
+
+
+

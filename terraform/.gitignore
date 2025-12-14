@@ -1,0 +1,11 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.template
+.terraform.lock.hcl
+tfplan
+
+# Logs
+*.log
