@@ -1,13 +1,13 @@
 #!/bin/bash
 set -e
 
-# Orby Slack Client - GCE VM Deployment Script
-# Deploys the slack-mcp-client on a GCE VM using Terraform
+# Orby Slack Client + MCP Server - GCE VM Deployment Script
+# Deploys both slack-mcp-client and orby-mcp-server on a GCE VM using Terraform
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TERRAFORM_DIR="${SCRIPT_DIR}/terraform"
 
-echo "🚀 Deploying Orby Slack Client (GCE VM)"
+echo "🚀 Deploying Orby Slack Client + MCP Server (GCE VM)"
 echo ""
 
 # Check for terraform
@@ -24,6 +24,8 @@ if [ ! -f "${TERRAFORM_DIR}/terraform.tfvars" ]; then
     MISSING_VARS=()
     [ -z "$SLACK_BOT_TOKEN" ] && MISSING_VARS+=("SLACK_BOT_TOKEN")
     [ -z "$SLACK_APP_TOKEN" ] && MISSING_VARS+=("SLACK_APP_TOKEN")
+    [ -z "$SLACK_SIGNING_SECRET" ] && MISSING_VARS+=("SLACK_SIGNING_SECRET")
+    [ -z "$NOTION_API_KEY" ] && MISSING_VARS+=("NOTION_API_KEY")
     [ -z "$LITELLM_API_KEY" ] && MISSING_VARS+=("LITELLM_API_KEY")
     
     if [ ${#MISSING_VARS[@]} -gt 0 ]; then
@@ -42,16 +44,19 @@ project_id = "${GCP_PROJECT_ID:-gen-lang-client-0335698828}"
 region     = "europe-west1"
 zone       = "europe-west1-b"
 
-machine_type = "e2-micro"
+machine_type = "e2-small"
 
-slack_bot_token = "${SLACK_BOT_TOKEN}"
-slack_app_token = "${SLACK_APP_TOKEN}"
+slack_bot_token      = "${SLACK_BOT_TOKEN}"
+slack_app_token      = "${SLACK_APP_TOKEN}"
+slack_signing_secret = "${SLACK_SIGNING_SECRET}"
+
+notion_api_key = "${NOTION_API_KEY}"
 
 litellm_api_key  = "${LITELLM_API_KEY}"
 litellm_base_url = "${LITELLM_BASE_URL:-https://litellm.tolemy.bio/v1}"
-litellm_model    = "${LITELLM_MODEL:-claude-3-5-haiku-20241022}"
+litellm_model    = "${LITELLM_MODEL:-claude-sonnet-4-5}"
 
-mcp_server_url = "${MCP_SERVER_URL:-https://orby-mcp-server-228973215278.europe-west1.run.app/mcp}"
+mcp_server_url = "${MCP_SERVER_URL:-http://localhost:8080/rpc}"
 mcp_auth_token = "${MCP_AUTH_TOKEN:-}"
 EOF
     echo "✅ Created terraform.tfvars"
@@ -81,8 +86,15 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     terraform output
     echo ""
     echo "📝 Useful commands:"
-    echo "  View logs:    $(terraform output -raw logs_command)"
-    echo "  SSH to VM:    $(terraform output -raw ssh_command)"
+    echo "  SSH to VM:              $(terraform output -raw ssh_command)"
+    echo "  Slack client logs:      $(terraform output -raw logs_command_slack)"
+    echo "  MCP server logs:        $(terraform output -raw logs_command_mcp)"
+    echo ""
+    echo "Or use the Makefile from orby/:"
+    echo "  make logs-slack         # View Slack client logs"
+    echo "  make logs-mcp           # View MCP server logs"
+    echo "  make status-vm          # Check both services"
+    echo "  make restart-all        # Restart both services"
 else
     echo "Cancelled."
     rm -f tfplan

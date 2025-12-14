@@ -1,5 +1,5 @@
-# Orby Slack Client - GCE VM
-# A small always-on VM to run slack-mcp-client
+# Orby Slack Client + MCP Server - GCE VM
+# A small always-on VM to run both slack-mcp-client and orby-mcp-server
 
 terraform {
   required_version = ">= 1.0"
@@ -52,13 +52,24 @@ resource "google_compute_instance" "slack_client" {
 
   # Pass secrets and startup script via metadata (encrypted at rest)
   metadata = {
-    slack-bot-token  = var.slack_bot_token
-    slack-app-token  = var.slack_app_token
+    # Slack credentials (used by both Slack client and MCP server)
+    slack-bot-token      = var.slack_bot_token
+    slack-app-token      = var.slack_app_token
+    slack-signing-secret = var.slack_signing_secret
+    
+    # LiteLLM credentials (used by both services)
     litellm-api-key  = var.litellm_api_key
     litellm-base-url = var.litellm_base_url
     litellm-model    = var.litellm_model
+    
+    # Notion credentials (used by MCP server)
+    notion-api-key = var.notion_api_key
+    
+    # MCP server configuration
     mcp-server-url   = var.mcp_server_url
     mcp-auth-token   = var.mcp_auth_token
+    rag-persist-dir  = var.rag_persist_dir
+    
     startup-script   = file("${path.module}/startup.sh")
   }
 
@@ -79,7 +90,7 @@ resource "google_compute_instance" "slack_client" {
 
   labels = {
     app     = "orby"
-    purpose = "slack-client"
+    purpose = "slack-client-and-mcp-server"
   }
 
   # Lifecycle: prefer updates over replacements for faster deploys
@@ -108,8 +119,12 @@ output "ssh_command" {
   value = "gcloud compute ssh ${google_compute_instance.slack_client.name} --zone=${google_compute_instance.slack_client.zone} --project=${var.project_id}"
 }
 
-output "logs_command" {
+output "logs_command_slack" {
   value = "gcloud compute ssh ${google_compute_instance.slack_client.name} --zone=${google_compute_instance.slack_client.zone} --project=${var.project_id} --command='sudo journalctl -u slack-mcp-client -f'"
+}
+
+output "logs_command_mcp" {
+  value = "gcloud compute ssh ${google_compute_instance.slack_client.name} --zone=${google_compute_instance.slack_client.zone} --project=${var.project_id} --command='sudo journalctl -u orby-mcp-server -f'"
 }
 
 

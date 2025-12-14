@@ -19,9 +19,9 @@ variable "zone" {
 }
 
 variable "machine_type" {
-  description = "VM machine type (e2-micro is free tier eligible)"
+  description = "VM machine type (e2-small recommended for running both services)"
   type        = string
-  default     = "e2-micro"  # Free tier: 1 e2-micro per month
+  default     = "e2-small"  # 2GB RAM for Slack client + MCP server + ChromaDB
 }
 
 # Slack credentials
@@ -56,15 +56,15 @@ variable "litellm_model" {
   default     = "claude-sonnet-4-5"  # Upgraded from Haiku for better reasoning
 }
 
-# MCP Server
+# MCP Server (now co-located on VM)
 variable "mcp_server_url" {
-  description = "URL of the MCP server"
+  description = "URL of the MCP server (deprecated - now localhost)"
   type        = string
-  default     = "https://orby-mcp-server-228973215278.europe-west1.run.app/mcp"
+  default     = "http://localhost:8080/rpc"
 }
 
 variable "mcp_auth_token" {
-  description = "MCP server authentication token"
+  description = "MCP server authentication token (deprecated - not needed for localhost)"
   type        = string
   sensitive   = true
   default     = ""
@@ -74,5 +74,25 @@ variable "custom_prompt" {
   description = "Custom system prompt for the Slack bot (optional)"
   type        = string
   default     = ""
+}
+
+# Notion credentials (for MCP server)
+variable "notion_api_key" {
+  description = "Notion API Key"
+  type        = string
+  sensitive   = true
+}
+
+variable "slack_signing_secret" {
+  description = "Slack Signing Secret (for MCP server)"
+  type        = string
+  sensitive   = true
+}
+
+# RAG configuration
+variable "rag_persist_dir" {
+  description = "Directory for ChromaDB vector store persistence"
+  type        = string
+  default     = "/var/lib/orby/chroma"
 }
 

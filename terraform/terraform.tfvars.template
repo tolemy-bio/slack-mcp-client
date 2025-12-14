@@ -9,17 +9,24 @@ zone       = "europe-west1-b"
 machine_type = "e2-micro"
 
 # Slack credentials
-slack_bot_token = "xoxb-your-bot-token"
-slack_app_token = "xapp-your-app-token"
+slack_bot_token      = "xoxb-your-bot-token"
+slack_app_token      = "xapp-your-app-token"
+slack_signing_secret = "your-signing-secret"
 
 # LiteLLM credentials
 litellm_api_key  = "your-litellm-api-key"
 litellm_base_url = "https://litellm.tolemy.bio/v1"
 litellm_model    = "claude-3-5-haiku-20241022"
 
-# MCP Server
-mcp_server_url = "https://orby-mcp-server-228973215278.europe-west1.run.app/mcp"
-mcp_auth_token = "your-mcp-auth-token"
+# Notion credentials (for MCP server)
+notion_api_key = "secret_your-notion-api-key"
+
+# MCP Server (now co-located on localhost)
+# mcp_server_url = "http://localhost:8080/rpc"  # (default, no need to set)
+# mcp_auth_token = ""  # (not needed for localhost)
+
+# RAG configuration
+# rag_persist_dir = "/var/lib/orby/chroma"  # (default, no need to set)
 
 
 
