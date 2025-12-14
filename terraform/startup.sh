@@ -159,7 +159,7 @@ ExecStartPre=-/usr/bin/docker stop orby-mcp-server
 ExecStartPre=-/usr/bin/docker rm orby-mcp-server
 
 ExecStart=/usr/bin/docker run --rm --name orby-mcp-server \
-  -p 127.0.0.1:8080:8080 \
+  -p 8080:8080 \
   -v ${RAG_PERSIST_DIR}:/tmp/orby_chroma \
   -e SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN} \
   -e SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET} \

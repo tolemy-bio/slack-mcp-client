@@ -33,7 +33,7 @@ resource "google_compute_instance" "slack_client" {
   machine_type = var.machine_type
   zone         = var.zone
 
-  tags = ["orby-slack-client"]
+  tags = ["orby-slack-client", "orby-mcp-server"]
 
   boot_disk {
     initialize_params {
@@ -127,5 +127,32 @@ output "logs_command_mcp" {
   value = "gcloud compute ssh ${google_compute_instance.slack_client.name} --zone=${google_compute_instance.slack_client.zone} --project=${var.project_id} --command='sudo journalctl -u orby-mcp-server -f'"
 }
 
+# Firewall rule to allow MCP server access (port 8080)
+resource "google_compute_firewall" "allow_mcp_server" {
+  name    = "allow-orby-mcp-server"
+  network = "default"
 
+  allow {
+    protocol = "tcp"
+    ports    = ["8080"]
+  }
+
+  # Allow from anywhere (MCP clients can be anywhere)
+  source_ranges = ["0.0.0.0/0"]
+  
+  # Only apply to VMs with the orby-mcp-server tag
+  target_tags = ["orby-mcp-server"]
+  
+  description = "Allow external access to Orby MCP Server on port 8080"
+}
+
+output "mcp_server_url" {
+  value = "http://${google_compute_instance.slack_client.network_interface[0].access_config[0].nat_ip}:8080"
+  description = "MCP Server URL (external)"
+}
+
+output "mcp_server_endpoint" {
+  value = "http://${google_compute_instance.slack_client.network_interface[0].access_config[0].nat_ip}:8080/mcp/sse"
+  description = "MCP Server SSE endpoint for clients (Cursor, Claude Desktop)"
+}
 
