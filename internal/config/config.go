@@ -66,6 +66,9 @@ type LLMConfig struct {
 	// Legacy fields for backward compatibility
 	Temperature        *float64                     `json:"temperature,omitempty"`        // Deprecated: Use providers[provider].temperature
 	MaxTokens          *int                         `json:"maxTokens,omitempty"`          // Deprecated: Use providers[provider].maxTokens
+	OpenAI             *LLMProviderConfig           `json:"openai,omitempty"`             // Deprecated: Use providers.openai
+	Anthropic          *LLMProviderConfig           `json:"anthropic,omitempty"`          // Deprecated: Use providers.anthropic
+	Ollama             *LLMProviderConfig           `json:"ollama,omitempty"`             // Deprecated: Use providers.ollama
 	Providers          map[string]LLMProviderConfig `json:"providers,omitempty"`
 }
 
@@ -332,7 +335,21 @@ func (c *Config) applyLLMDefaults() {
 
 // migrateLegacyLLMFields migrates legacy temperature and maxTokens to provider-specific config
 func (c *Config) migrateLegacyLLMFields() {
-	// Only migrate if legacy fields are set
+	// Migrate legacy provider-specific configs (llm.openai, llm.anthropic, llm.ollama)
+	if c.LLM.OpenAI != nil {
+		c.LLM.Providers[ProviderOpenAI] = *c.LLM.OpenAI
+		c.LLM.OpenAI = nil
+	}
+	if c.LLM.Anthropic != nil {
+		c.LLM.Providers[ProviderAnthropic] = *c.LLM.Anthropic
+		c.LLM.Anthropic = nil
+	}
+	if c.LLM.Ollama != nil {
+		c.LLM.Providers[ProviderOllama] = *c.LLM.Ollama
+		c.LLM.Ollama = nil
+	}
+	
+	// Only migrate top-level temperature/maxTokens if legacy fields are set
 	if c.LLM.Temperature == nil && c.LLM.MaxTokens == nil {
 		return
 	}
