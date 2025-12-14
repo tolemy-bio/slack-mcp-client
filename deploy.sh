@@ -71,7 +71,17 @@ ORBY_DIR="${SCRIPT_DIR}/../orby"
 
 # Build using Cloud Build (works from Mac, builds for Linux)
 cd "${ORBY_DIR}"
-gcloud builds submit --tag "${IMAGE_NAME}" --project "${PROJECT_ID}" -f deploy/Dockerfile .
+
+# Create temporary cloudbuild.yaml
+cat > /tmp/cloudbuild-orby.yaml << YAML
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${IMAGE_NAME}', '-f', 'deploy/Dockerfile', '.']
+images: ['${IMAGE_NAME}']
+YAML
+
+gcloud builds submit --config=/tmp/cloudbuild-orby.yaml --project "${PROJECT_ID}" .
+rm -f /tmp/cloudbuild-orby.yaml
 echo "✅ Docker image pushed to ${IMAGE_NAME}"
 
 # Initialize and apply terraform

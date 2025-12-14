@@ -47,6 +47,7 @@ echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
 
 # Build slack-mcp-client from source (public repo)
 echo "Building slack-mcp-client from source..."
+rm -rf /opt/slack-client
 mkdir -p /opt/slack-client
 cd /opt/slack-client
 git clone https://github.com/tolemy-bio/slack-mcp-client.git .
