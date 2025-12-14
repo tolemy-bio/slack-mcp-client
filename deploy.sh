@@ -62,16 +62,17 @@ EOF
     echo "✅ Created terraform.tfvars"
 fi
 
-# Upload orby code to GCS for VM deployment
+# Build and push MCP server Docker image
 echo ""
-echo "📦 Uploading orby code to GCS..."
-BUCKET_NAME="orby-deployment-artifacts"
-if ! gsutil ls gs://${BUCKET_NAME} &>/dev/null; then
-    echo "Creating GCS bucket ${BUCKET_NAME}..."
-    gsutil mb -l europe-west1 gs://${BUCKET_NAME}
-fi
-echo "Syncing orby code..."
-gsutil -m rsync -r -d "${SCRIPT_DIR}/../orby/" "gs://${BUCKET_NAME}/orby/"
+echo "🐳 Building MCP server Docker image..."
+PROJECT_ID="${GCP_PROJECT_ID:-gen-lang-client-0335698828}"
+IMAGE_NAME="gcr.io/${PROJECT_ID}/orby-mcp-server"
+ORBY_DIR="${SCRIPT_DIR}/../orby"
+
+# Build using Cloud Build (works from Mac, builds for Linux)
+cd "${ORBY_DIR}"
+gcloud builds submit --tag "${IMAGE_NAME}" --project "${PROJECT_ID}" -f deploy/Dockerfile .
+echo "✅ Docker image pushed to ${IMAGE_NAME}"
 
 # Initialize and apply terraform
 cd "${TERRAFORM_DIR}"

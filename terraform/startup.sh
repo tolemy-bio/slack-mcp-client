@@ -1,6 +1,7 @@
 #!/bin/bash
 # Orby Slack Client + MCP Server - VM Startup Script
-# Installs and configures both slack-mcp-client (Go) and orby-mcp-server (Python) as systemd services
+# - Slack client: Built from source (public repo)
+# - MCP server: Docker container (pulled from GCR)
 
 set -e
 
@@ -9,34 +10,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "=== Orby Services Setup Started at $(date) ==="
 
-# Install dependencies
-echo "Installing dependencies..."
-apt-get update
-apt-get install -y curl jq git python3 python3-pip python3-venv
-
-# Install Go 1.24+
-echo "Installing Go..."
-GO_VERSION="1.24.4"
-curl -LO "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
-rm -rf /usr/local/go
-tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
-rm "go${GO_VERSION}.linux-amd64.tar.gz"
-export PATH=$PATH:/usr/local/go/bin
-echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
-
-# Build slack-mcp-client from source
-echo "Building slack-mcp-client from source..."
-mkdir -p /opt/slack-client
-cd /opt/slack-client
-git clone https://github.com/tolemy-bio/slack-mcp-client.git .
-export HOME=/root
-export GOPATH=/root/go
-export GOCACHE=/root/.cache/go-build
-export PATH=$PATH:/usr/local/go/bin
-/usr/local/go/bin/go build -o /usr/local/bin/slack-mcp-client ./cmd
-chmod +x /usr/local/bin/slack-mcp-client
-
-# Fetch secrets from instance metadata
+# Fetch secrets from instance metadata first (needed for config)
 echo "Fetching configuration from metadata..."
 METADATA_URL="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
 METADATA_HEADER="Metadata-Flavor: Google"
@@ -49,14 +23,44 @@ LITELLM_BASE_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/litellm-base-url
 LITELLM_MODEL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/litellm-model")
 NOTION_API_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/notion-api-key")
 MCP_SERVER_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-server-url")
-MCP_AUTH_TOKEN=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-auth-token")
 RAG_PERSIST_DIR=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/rag-persist-dir")
+GCP_PROJECT_ID=$(curl -s -H "$METADATA_HEADER" "http://metadata.google.internal/computeMetadata/v1/project/project-id")
+
+# Install dependencies
+echo "Installing dependencies..."
+apt-get update
+apt-get install -y curl jq git docker.io
+
+# Start Docker
+systemctl enable docker
+systemctl start docker
+
+# Install Go 1.24+
+echo "Installing Go..."
+GO_VERSION="1.24.4"
+curl -LO "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+rm -rf /usr/local/go
+tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+rm "go${GO_VERSION}.linux-amd64.tar.gz"
+export PATH=$PATH:/usr/local/go/bin
+echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+
+# Build slack-mcp-client from source (public repo)
+echo "Building slack-mcp-client from source..."
+mkdir -p /opt/slack-client
+cd /opt/slack-client
+git clone https://github.com/tolemy-bio/slack-mcp-client.git .
+export HOME=/root
+export GOPATH=/root/go
+export GOCACHE=/root/.cache/go-build
+/usr/local/go/bin/go build -o /usr/local/bin/slack-mcp-client ./cmd
+chmod +x /usr/local/bin/slack-mcp-client
 
 # Create config directory
 mkdir -p /etc/orby
 
-# Create config file
-echo "Creating configuration..."
+# Create Slack client config file
+echo "Creating Slack client configuration..."
 cat > /etc/orby/slack-client-config.json << EOF
 {
   "version": "2.0",
@@ -92,16 +96,16 @@ cat > /etc/orby/slack-client-config.json << EOF
 }
 EOF
 
-# Secure the config file (contains secrets)
 chmod 600 /etc/orby/slack-client-config.json
 
-# Create systemd service
-echo "Creating systemd service..."
+# Create Slack client systemd service
+echo "Creating Slack client systemd service..."
 cat > /etc/systemd/system/slack-mcp-client.service << EOF
 [Unit]
 Description=Orby Slack MCP Client
-After=network-online.target
+After=network-online.target orby-mcp-server.service
 Wants=network-online.target
+Requires=orby-mcp-server.service
 
 [Service]
 Type=simple
@@ -115,91 +119,76 @@ Environment=SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
 Environment=OPENAI_API_KEY=${LITELLM_API_KEY}
 Environment=OPENAI_BASE_URL=${LITELLM_BASE_URL}
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadOnlyPaths=/
-ReadWritePaths=/var/log
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Enable and start the Slack client service
-echo "Starting Slack client service..."
-systemctl daemon-reload
-systemctl enable slack-mcp-client
-systemctl start slack-mcp-client
-
 echo ""
-echo "=== Installing Orby MCP Server ==="
+echo "=== Setting up Orby MCP Server (Docker) ==="
 
-# Download orby code from GCS bucket (uploaded during deployment)
-echo "Downloading orby code..."
-mkdir -p /opt/tolemy-core/orby
-cd /opt/tolemy-core/orby
-gsutil -m rsync -r gs://orby-deployment-artifacts/orby/ .
+# Configure Docker to use GCR
+echo "Configuring Docker for GCR..."
+gcloud auth configure-docker --quiet
 
-# Install Python dependencies
-echo "Installing Python dependencies..."
-pip3 install --break-system-packages -r requirements.txt
+# Pull the MCP server image from GCR
+MCP_IMAGE="gcr.io/${GCP_PROJECT_ID}/orby-mcp-server:latest"
+echo "Pulling MCP server image: ${MCP_IMAGE}"
+docker pull ${MCP_IMAGE}
 
 # Create RAG persist directory
 echo "Creating RAG persist directory..."
 mkdir -p "${RAG_PERSIST_DIR}"
 chmod 755 "${RAG_PERSIST_DIR}"
 
-# Create MCP server environment file
-echo "Creating MCP server environment file..."
-cat > /etc/orby/mcp-server.env << EOF
-SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
-SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
-SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
-NOTION_API_KEY=${NOTION_API_KEY}
-LITELLM_BASE_URL=${LITELLM_BASE_URL}
-LITELLM_API_KEY=${LITELLM_API_KEY}
-LITELLM_MODEL=${LITELLM_MODEL}
-RAG_PERSIST_DIR=${RAG_PERSIST_DIR}
-EOF
-
-chmod 600 /etc/orby/mcp-server.env
-
-# Create MCP server systemd service
+# Create MCP server systemd service (runs Docker container)
 echo "Creating MCP server systemd service..."
-cat > /etc/systemd/system/orby-mcp-server.service << 'EOF'
+cat > /etc/systemd/system/orby-mcp-server.service << EOF
 [Unit]
-Description=Orby MCP Server
-After=network-online.target
+Description=Orby MCP Server (Docker)
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/tolemy-core/orby
-ExecStart=/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8080
-EnvironmentFile=/etc/orby/mcp-server.env
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadOnlyPaths=/
-ReadWritePaths=/var/lib/orby
-ReadWritePaths=/tmp
+ExecStartPre=-/usr/bin/docker stop orby-mcp-server
+ExecStartPre=-/usr/bin/docker rm orby-mcp-server
+
+ExecStart=/usr/bin/docker run --rm --name orby-mcp-server \
+  -p 127.0.0.1:8080:8080 \
+  -v ${RAG_PERSIST_DIR}:/tmp/orby_chroma \
+  -e SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN} \
+  -e SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET} \
+  -e SLACK_APP_TOKEN=${SLACK_APP_TOKEN} \
+  -e NOTION_API_KEY=${NOTION_API_KEY} \
+  -e LITELLM_BASE_URL=${LITELLM_BASE_URL} \
+  -e LITELLM_API_KEY=${LITELLM_API_KEY} \
+  -e LITELLM_MODEL=${LITELLM_MODEL} \
+  -e RAG_PERSIST_DIR=/tmp/orby_chroma \
+  ${MCP_IMAGE}
+
+ExecStop=/usr/bin/docker stop orby-mcp-server
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Enable and start the MCP server service
-echo "Starting MCP server service..."
+# Enable and start services
+echo "Starting services..."
 systemctl daemon-reload
 systemctl enable orby-mcp-server
+systemctl enable slack-mcp-client
 systemctl start orby-mcp-server
+
+# Wait for MCP server to be ready
+echo "Waiting for MCP server to start..."
+sleep 10
+
+# Start Slack client
+systemctl start slack-mcp-client
 
 echo ""
 echo "=== Orby Services Setup Completed at $(date) ==="
@@ -208,9 +197,9 @@ echo "Slack Client:"
 echo "  Check status: systemctl status slack-mcp-client"
 echo "  View logs: journalctl -u slack-mcp-client -f"
 echo ""
-echo "MCP Server:"
+echo "MCP Server (Docker):"
 echo "  Check status: systemctl status orby-mcp-server"
 echo "  View logs: journalctl -u orby-mcp-server -f"
+echo "  Docker logs: docker logs orby-mcp-server -f"
 echo ""
-echo "Both services are running and configured to communicate via localhost:8080"
-
+echo "Both services are running - Slack client connects to MCP at localhost:8080"
