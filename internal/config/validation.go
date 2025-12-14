@@ -233,6 +233,10 @@ func LoadConfig(configFile string, logger *logging.Logger) (*Config, error) {
 		}
 	}
 
+	// Re-apply environment variables AFTER loading config file
+	// This ensures empty strings in config don't override env vars
+	cfg.ApplyEnvironmentVariables()
+
 	// Perform environment variable substitution (for ${VAR} placeholders only)
 	cfg.SubstituteEnvironmentVariables()
 
