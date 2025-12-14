@@ -87,10 +87,13 @@ type MCPServerConfig struct {
 	Args                     []string          `json:"args,omitempty"`
 	URL                      string            `json:"url,omitempty"`
 	Transport                string            `json:"transport,omitempty"`
+	Mode                     string            `json:"mode,omitempty"`           // Legacy: use Transport instead
 	Env                      map[string]string `json:"env,omitempty"`
 	HTTPHeaders              map[string]string `json:"httpHeaders,omitempty"`
+	Headers                  map[string]string `json:"headers,omitempty"`        // Legacy: use HTTPHeaders instead
 	Disabled                 bool              `json:"disabled,omitempty"`
 	InitializeTimeoutSeconds *int              `json:"initializeTimeoutSeconds,omitempty"`
+	Initialize_Timeout_Seconds *int            `json:"initialize_timeout_seconds,omitempty"` // Legacy snake_case
 	Tools                    MCPToolsConfig    `json:"tools,omitempty"`
 }
 
@@ -510,10 +513,35 @@ func (c *Config) applyObservabilityDefaults() {
 	}
 }
 
-// applyMCPDefaults initializes MCP servers map if nil
+// applyMCPDefaults initializes MCP servers map if nil and migrates legacy fields
 func (c *Config) applyMCPDefaults() {
 	if c.MCPServers == nil {
 		c.MCPServers = make(map[string]MCPServerConfig)
+	}
+	
+	// Migrate legacy MCP server fields
+	for name, server := range c.MCPServers {
+		migrated := server
+		
+		// Migrate mode -> transport
+		if server.Mode != "" && server.Transport == "" {
+			migrated.Transport = server.Mode
+			migrated.Mode = ""
+		}
+		
+		// Migrate headers -> httpHeaders
+		if len(server.Headers) > 0 && len(server.HTTPHeaders) == 0 {
+			migrated.HTTPHeaders = server.Headers
+			migrated.Headers = nil
+		}
+		
+		// Migrate initialize_timeout_seconds -> initializeTimeoutSeconds
+		if server.Initialize_Timeout_Seconds != nil && server.InitializeTimeoutSeconds == nil {
+			migrated.InitializeTimeoutSeconds = server.Initialize_Timeout_Seconds
+			migrated.Initialize_Timeout_Seconds = nil
+		}
+		
+		c.MCPServers[name] = migrated
 	}
 }
 
