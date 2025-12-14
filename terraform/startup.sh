@@ -29,7 +29,7 @@ GCP_PROJECT_ID=$(curl -s -H "$METADATA_HEADER" "http://metadata.google.internal/
 # Install dependencies
 echo "Installing dependencies..."
 apt-get update
-apt-get install -y curl jq git docker.io
+apt-get install -y curl jq git docker.io nginx certbot python3-certbot-nginx
 
 # Start Docker
 systemctl enable docker
@@ -159,7 +159,7 @@ ExecStartPre=-/usr/bin/docker stop orby-mcp-server
 ExecStartPre=-/usr/bin/docker rm orby-mcp-server
 
 ExecStart=/usr/bin/docker run --rm --name orby-mcp-server \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -v ${RAG_PERSIST_DIR}:/tmp/orby_chroma \
   -e SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN} \
   -e SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET} \
@@ -190,6 +190,109 @@ sleep 10
 
 # Start Slack client
 systemctl start slack-mcp-client
+
+echo ""
+echo "=== Setting up Nginx HTTPS Reverse Proxy ==="
+
+# Create Nginx config for MCP server
+cat > /etc/nginx/sites-available/orby-mcp << 'NGINX_EOF'
+# Orby MCP Server - HTTPS Reverse Proxy
+# Proxies HTTPS requests to the local MCP server on port 8080
+
+server {
+    listen 80;
+    server_name orby.tolemy.bio;
+    
+    # Let's Encrypt challenge location
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    # Redirect all other HTTP to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name orby.tolemy.bio;
+    
+    # SSL certificates (will be created by certbot)
+    ssl_certificate /etc/letsencrypt/live/orby.tolemy.bio/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/orby.tolemy.bio/privkey.pem;
+    
+    # Modern SSL config
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    
+    # HSTS
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    
+    # Proxy to MCP server
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # SSE support (for /mcp/sse endpoint)
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        chunked_transfer_encoding off;
+    }
+}
+NGINX_EOF
+
+# Enable the site
+ln -sf /etc/nginx/sites-available/orby-mcp /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+# Create initial Nginx config without SSL for certbot
+cat > /etc/nginx/sites-available/orby-mcp-initial << 'NGINX_INIT_EOF'
+server {
+    listen 80;
+    server_name orby.tolemy.bio;
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+NGINX_INIT_EOF
+
+# Start with initial config (no SSL yet)
+ln -sf /etc/nginx/sites-available/orby-mcp-initial /etc/nginx/sites-enabled/orby-mcp
+mkdir -p /var/www/html
+systemctl enable nginx
+systemctl restart nginx
+
+# Attempt to get SSL certificate (will fail if DNS not pointing here yet)
+echo "Attempting to obtain SSL certificate..."
+if certbot certonly --nginx -d orby.tolemy.bio --non-interactive --agree-tos --email caelan@tolemy.bio --keep-until-expiring 2>&1; then
+    echo "SSL certificate obtained! Switching to HTTPS config..."
+    ln -sf /etc/nginx/sites-available/orby-mcp /etc/nginx/sites-enabled/orby-mcp
+    systemctl reload nginx
+    echo "✅ HTTPS enabled for orby.tolemy.bio"
+else
+    echo "⚠️  SSL certificate not obtained (DNS may not be pointing here yet)"
+    echo "   Once DNS is configured, run: sudo certbot --nginx -d orby.tolemy.bio"
+    echo "   For now, HTTP is enabled on port 80"
+fi
+
+# Set up auto-renewal cron job
+echo "0 3 * * * root certbot renew --quiet --post-hook 'systemctl reload nginx'" > /etc/cron.d/certbot-renew
 
 echo ""
 echo "=== Orby Services Setup Completed at $(date) ==="

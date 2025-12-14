@@ -96,3 +96,15 @@ variable "rag_persist_dir" {
   default     = "/var/lib/orby/chroma"
 }
 
+# Domain configuration
+variable "domain_name" {
+  description = "Domain name for HTTPS (e.g., orby.tolemy.bio)"
+  type        = string
+  default     = "orby.tolemy.bio"
+}
+
+variable "admin_email" {
+  description = "Admin email for Let's Encrypt notifications"
+  type        = string
+  default     = "caelan@tolemy.bio"
+}

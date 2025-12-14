@@ -127,14 +127,14 @@ output "logs_command_mcp" {
   value = "gcloud compute ssh ${google_compute_instance.slack_client.name} --zone=${google_compute_instance.slack_client.zone} --project=${var.project_id} --command='sudo journalctl -u orby-mcp-server -f'"
 }
 
-# Firewall rule to allow MCP server access (port 8080)
+# Firewall rule for HTTPS (443) and HTTP (80 for Let's Encrypt validation)
 resource "google_compute_firewall" "allow_mcp_server" {
   name    = "allow-orby-mcp-server"
   network = "default"
 
   allow {
     protocol = "tcp"
-    ports    = ["8080"]
+    ports    = ["80", "443"]
   }
 
   # Allow from anywhere (MCP clients can be anywhere)
@@ -143,16 +143,16 @@ resource "google_compute_firewall" "allow_mcp_server" {
   # Only apply to VMs with the orby-mcp-server tag
   target_tags = ["orby-mcp-server"]
   
-  description = "Allow external access to Orby MCP Server on port 8080"
+  description = "Allow HTTPS access to Orby MCP Server via Nginx"
 }
 
 output "mcp_server_url" {
-  value = "http://${google_compute_instance.slack_client.network_interface[0].access_config[0].nat_ip}:8080"
-  description = "MCP Server URL (external)"
+  value = "https://orby.tolemy.bio"
+  description = "MCP Server URL (HTTPS via Nginx)"
 }
 
 output "mcp_server_endpoint" {
-  value = "http://${google_compute_instance.slack_client.network_interface[0].access_config[0].nat_ip}:8080/mcp/sse"
+  value = "https://orby.tolemy.bio/mcp/sse"
   description = "MCP Server SSE endpoint for clients (Cursor, Claude Desktop)"
 }
 
