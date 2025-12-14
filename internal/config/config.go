@@ -523,10 +523,11 @@ func (c *Config) applyMCPDefaults() {
 	for name, server := range c.MCPServers {
 		migrated := server
 		
-		// Migrate mode -> transport
+		// Migrate mode -> transport (BUT keep mode as well for compatibility)
+		// The old fork used "mode" and the GetTransport() method checks it
 		if server.Mode != "" && server.Transport == "" {
 			migrated.Transport = server.Mode
-			migrated.Mode = ""
+			// Don't clear Mode - leave it for GetTransport() to use
 		}
 		
 		// Migrate headers -> httpHeaders
