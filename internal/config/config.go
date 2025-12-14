@@ -26,6 +26,7 @@ type Config struct {
 	Version        string                     `json:"version"`
 	Slack          SlackConfig                `json:"slack"`
 	LLM            LLMConfig                  `json:"llm"`
+	Agent          *AgentConfig               `json:"agent,omitempty"`  // Legacy field for backward compatibility
 	MCPServers     map[string]MCPServerConfig `json:"mcpServers"`
 	RAG            RAGConfig                  `json:"rag,omitempty"`
 	Security       SecurityConfig             `json:"security,omitempty"`
@@ -35,6 +36,14 @@ type Config struct {
 	Reload         ReloadConfig               `json:"reload,omitempty"`
 	Observability  ObservabilityConfig        `json:"observability,omitempty"`
 	UseStdIOClient bool                       `json:"useStdIOClient,omitempty"` // Use terminal client instead of a real slack bot, for local development
+}
+
+// AgentConfig is for backward compatibility with older config format
+// Deprecated: Use LLM.UseAgent and LLM.CustomPrompt instead
+type AgentConfig struct {
+	Enabled        bool   `json:"enabled"`
+	MaxIterations  int    `json:"maxIterations,omitempty"`
+	SystemPrompt   string `json:"systemPrompt,omitempty"`
 }
 
 // SlackConfig contains Slack-specific configuration
@@ -234,6 +243,7 @@ func (s *SecurityConfig) buildLookupMaps() {
 // ApplyDefaults applies default values to the configuration
 func (c *Config) ApplyDefaults() {
 	c.applyVersionDefaults()
+	c.migrateAgentConfig() // Migrate legacy agent config before applying LLM defaults
 	c.applyLLMDefaults()
 	c.applyRAGDefaults()
 	c.applySlackDefaults()
@@ -243,6 +253,29 @@ func (c *Config) ApplyDefaults() {
 	c.applyMonitoringDefaults()
 	c.applyMCPDefaults()
 	c.applyObservabilityDefaults()
+}
+
+// migrateAgentConfig migrates the legacy "agent" config to the new LLM config format
+func (c *Config) migrateAgentConfig() {
+	if c.Agent != nil {
+		// Migrate agent.enabled to llm.useAgent
+		if c.Agent.Enabled {
+			c.LLM.UseAgent = true
+		}
+		
+		// Migrate agent.maxIterations to llm.maxAgentIterations
+		if c.Agent.MaxIterations > 0 {
+			c.LLM.MaxAgentIterations = c.Agent.MaxIterations
+		}
+		
+		// Migrate agent.systemPrompt to llm.customPrompt
+		if c.Agent.SystemPrompt != "" {
+			c.LLM.CustomPrompt = c.Agent.SystemPrompt
+		}
+		
+		// Clear the legacy agent config after migration
+		c.Agent = nil
+	}
 }
 
 // applyVersionDefaults sets default version if not specified
