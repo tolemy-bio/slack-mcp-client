@@ -586,8 +586,10 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		if llmResponse == "" {
 			c.userFrontend.SendMessage(channelID, threadTS, "(LLM returned an empty response)")
 			c.tracingHandler.RecordError(agentSpan, fmt.Errorf("LLM returned an empty response"), "ERROR")
-
 		} else {
+			// Add to history and send the final response
+			c.addToHistory(channelID, threadTS, "", "assistant", llmResponse, "", "", "", "", "", "")
+			c.userFrontend.SendMessage(channelID, threadTS, llmResponse)
 			c.tracingHandler.RecordSuccess(agentSpan, "LLM agent call succeeded")
 		}
 		agentSpan.End()
