@@ -582,18 +582,37 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		// Set Output
 		c.tracingHandler.SetOutput(agentSpan, llmResponse)
 
-		// The final response is already sent by the callback handler (HandleChainEnd)
-		// We just need to add it to history and handle the empty response case
+		// Send the final response to Slack
+		// Note: The callback handler (HandleChainEnd) does NOT send messages - it's called
+		// for every chain iteration including tool calls. We send the final response here.
 		if llmResponse == "" {
 			c.userFrontend.SendMessage(channelID, threadTS, "(LLM returned an empty response)")
 			c.tracingHandler.RecordError(agentSpan, fmt.Errorf("LLM returned an empty response"), "ERROR")
 		} else {
-			// Add to history (message already sent by callback handler)
-			c.addToHistory(channelID, threadTS, "", "assistant", llmResponse, "", "", "", "", "", "")
+			// Clean the response before sending - remove any agent reasoning prefixes
+			cleanedResponse := cleanAgentResponse(llmResponse)
+			c.addToHistory(channelID, threadTS, "", "assistant", cleanedResponse, "", "", "", "", "", "")
+			c.userFrontend.SendMessage(channelID, threadTS, cleanedResponse)
 			c.tracingHandler.RecordSuccess(agentSpan, "LLM agent call succeeded")
 		}
 		agentSpan.End()
 	}
+}
+
+// cleanAgentResponse removes agent reasoning prefixes from the response.
+// Agent responses may contain "Thought: Do I need to use a tool? No\nAI: actual response"
+// We extract just the user-facing part after "AI:" if present.
+func cleanAgentResponse(response string) string {
+	// Check if the response contains the AI: prefix indicating agent format
+	if idx := strings.Index(response, "AI:"); idx != -1 {
+		// Extract everything after "AI:" and trim whitespace
+		cleaned := strings.TrimSpace(response[idx+3:])
+		if cleaned != "" {
+			return cleaned
+		}
+	}
+	// If no AI: prefix or empty after extraction, return original
+	return response
 }
 
 // getIntFromMap safely extracts an int value from a map[string]interface{} by key.

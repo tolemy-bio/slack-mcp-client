@@ -2,7 +2,6 @@ package slackbot
 
 import (
 	"context"
-	"strings"
 
 	"github.com/tmc/langchaingo/callbacks"
 )
@@ -15,34 +14,13 @@ type agentCallbackHandler struct {
 }
 
 func (handler *agentCallbackHandler) HandleChainEnd(_ context.Context, outputs map[string]any) {
-	if text, ok := outputs["text"]; ok {
-		if textStr, ok := text.(string); ok {
-			// Filter out raw agent reasoning - only send user-facing messages
-			// Agent reasoning contains "Thought:", "Action:", "Action Input:" etc.
-			if isAgentReasoning(textStr) {
-				return // Don't send agent internal reasoning to Slack
-			}
-			handler.sendMessage(textStr)
-		}
-	}
-}
-
-// isAgentReasoning checks if the text is agent internal reasoning that shouldn't be shown to users
-func isAgentReasoning(text string) bool {
-	// Check for common agent reasoning patterns
-	reasoningPatterns := []string{
-		"Thought:",
-		"Action:",
-		"Action Input:",
-		"Justification:",
-		"Observation:",
-		"Do I need to use a tool?",
-	}
-
-	for _, pattern := range reasoningPatterns {
-		if strings.Contains(text, pattern) {
-			return true
-		}
-	}
-	return false
+	// NOTE: We intentionally do NOT send messages from HandleChainEnd.
+	// This callback is invoked for EVERY chain iteration (tool calls, reasoning steps, etc.),
+	// not just the final response. The final user-facing response is sent from client.go
+	// after GenerateAgentCompletion returns the complete llmResponse.
+	//
+	// Previously, sending from here caused:
+	// 1. Agent reasoning (Thought:, Action:, etc.) being sent to Slack
+	// 2. Duplicate final messages (once from here, once from client.go)
+	_ = outputs // Intentionally unused - we don't send intermediate outputs
 }
