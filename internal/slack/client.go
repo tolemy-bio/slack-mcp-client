@@ -582,14 +582,14 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		// Set Output
 		c.tracingHandler.SetOutput(agentSpan, llmResponse)
 
-		// Send the final response back to Slack
+		// The final response is already sent by the callback handler (HandleChainEnd)
+		// We just need to add it to history and handle the empty response case
 		if llmResponse == "" {
 			c.userFrontend.SendMessage(channelID, threadTS, "(LLM returned an empty response)")
 			c.tracingHandler.RecordError(agentSpan, fmt.Errorf("LLM returned an empty response"), "ERROR")
 		} else {
-			// Add to history and send the final response
+			// Add to history (message already sent by callback handler)
 			c.addToHistory(channelID, threadTS, "", "assistant", llmResponse, "", "", "", "", "", "")
-			c.userFrontend.SendMessage(channelID, threadTS, llmResponse)
 			c.tracingHandler.RecordSuccess(agentSpan, "LLM agent call succeeded")
 		}
 		agentSpan.End()

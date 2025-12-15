@@ -99,7 +99,70 @@ EOF
 
 chmod 600 /etc/orby/slack-client-config.json
 
-# Create Slack client systemd service
+# Create health check script for Slack client
+echo "Creating health check script..."
+cat > /usr/local/bin/orby-health-check.sh << 'HEALTHCHECK_EOF'
+#!/bin/bash
+# Health check for Orby services
+# Restarts Slack client if MCP server is up but tools weren't discovered
+
+LOG_PREFIX="[orby-health-check]"
+
+# Check if MCP server port is open (use nc instead of curl to avoid SSE hanging)
+if ! nc -z localhost 8080 2>/dev/null; then
+    echo "$LOG_PREFIX MCP server not responding, skipping check"
+    exit 0
+fi
+
+# Check Slack client logs for "Available tools (0)"
+# This indicates it started without discovering any tools
+if journalctl -u slack-mcp-client --since "5 minutes ago" | grep -q "Available tools (0)"; then
+    # Also check if it hasn't been restarted recently
+    LAST_RESTART=$(systemctl show slack-mcp-client --property=ActiveEnterTimestamp | cut -d'=' -f2)
+    LAST_RESTART_EPOCH=$(date -d "$LAST_RESTART" +%s 2>/dev/null || echo 0)
+    NOW_EPOCH=$(date +%s)
+    DIFF=$((NOW_EPOCH - LAST_RESTART_EPOCH))
+    
+    # Only restart if it's been running for at least 60 seconds (avoid restart loops)
+    if [ $DIFF -gt 60 ]; then
+        echo "$LOG_PREFIX Slack client has 0 tools but MCP server is up. Restarting..."
+        systemctl restart slack-mcp-client
+        echo "$LOG_PREFIX Slack client restarted"
+    else
+        echo "$LOG_PREFIX Slack client recently restarted ($DIFF seconds ago), skipping"
+    fi
+else
+    echo "$LOG_PREFIX Slack client appears healthy"
+fi
+HEALTHCHECK_EOF
+chmod +x /usr/local/bin/orby-health-check.sh
+
+# Create systemd timer for health check (runs every 2 minutes)
+cat > /etc/systemd/system/orby-health-check.timer << 'TIMER_EOF'
+[Unit]
+Description=Orby Health Check Timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+TIMER_EOF
+
+cat > /etc/systemd/system/orby-health-check.service << 'HEALTHSVC_EOF'
+[Unit]
+Description=Orby Health Check Service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/orby-health-check.sh
+StandardOutput=journal
+StandardError=journal
+HEALTHSVC_EOF
+
+# Create Slack client systemd service with wait-for-MCP
 echo "Creating Slack client systemd service..."
 cat > /etc/systemd/system/slack-mcp-client.service << EOF
 [Unit]
@@ -110,6 +173,8 @@ Requires=orby-mcp-server.service
 
 [Service]
 Type=simple
+# Wait for MCP server port to be open (TCP check - doesn't hang like curl to SSE)
+ExecStartPre=/bin/bash -c 'for i in \$(seq 1 30); do nc -z localhost 8080 && exit 0; sleep 2; done; exit 0'
 ExecStart=/usr/local/bin/slack-mcp-client --config /etc/orby/slack-client-config.json --metrics-port 9090
 Restart=always
 RestartSec=10
@@ -182,14 +247,34 @@ echo "Starting services..."
 systemctl daemon-reload
 systemctl enable orby-mcp-server
 systemctl enable slack-mcp-client
+systemctl enable orby-health-check.timer
 systemctl start orby-mcp-server
 
-# Wait for MCP server to be ready
-echo "Waiting for MCP server to start..."
-sleep 10
+# Wait for MCP server to be ready with health check
+echo "Waiting for MCP server to be ready..."
+MAX_RETRIES=30
+RETRY_INTERVAL=2
+for i in $(seq 1 $MAX_RETRIES); do
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health 2>/dev/null | grep -q "200\|404"; then
+        echo "✅ MCP server is ready (attempt $i/$MAX_RETRIES)"
+        break
+    fi
+    # Also try the SSE endpoint as fallback
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/mcp/sse 2>/dev/null | grep -q "200"; then
+        echo "✅ MCP server SSE endpoint is ready (attempt $i/$MAX_RETRIES)"
+        break
+    fi
+    if [ $i -eq $MAX_RETRIES ]; then
+        echo "⚠️ MCP server not responding after $MAX_RETRIES attempts, starting Slack client anyway"
+    else
+        echo "   Waiting for MCP server... (attempt $i/$MAX_RETRIES)"
+        sleep $RETRY_INTERVAL
+    fi
+done
 
-# Start Slack client
+# Start Slack client and health check timer
 systemctl start slack-mcp-client
+systemctl start orby-health-check.timer
 
 echo ""
 echo "=== Setting up Nginx HTTPS Reverse Proxy ==="
@@ -306,4 +391,10 @@ echo "  Check status: systemctl status orby-mcp-server"
 echo "  View logs: journalctl -u orby-mcp-server -f"
 echo "  Docker logs: docker logs orby-mcp-server -f"
 echo ""
+echo "Health Check (auto-recovery):"
+echo "  Check timer: systemctl status orby-health-check.timer"
+echo "  View logs: journalctl -u orby-health-check -f"
+echo "  Manual run: /usr/local/bin/orby-health-check.sh"
+echo ""
 echo "Both services are running - Slack client connects to MCP at localhost:8080"
+echo "Auto-recovery will restart Slack client if MCP tools aren't discovered"
