@@ -25,6 +25,7 @@ type UserFrontend interface {
 	SendMessage(channelID, threadTS, text string)
 	GetThreadReplies(channelID, threadTS string) ([]slack.Message, error)
 	GetUserInfo(userID string) (*UserProfile, error)
+	GetThreadURL(channelID, threadTS string) string
 }
 
 func getLogLevel(stdLogger *logging.Logger) logging.LogLevel {
@@ -81,6 +82,7 @@ func GetSlackClient(botToken, appToken string, stdLogger *logging.Logger, thinki
 		Client:          client,
 		botMentionRgx:   mentionRegex,
 		botUserID:       authTest.UserID,
+		teamID:          authTest.TeamID,
 		logger:          slackLogger,
 		thinkingMessage: thinkingMessage,
 		userCache:       make(map[string]*UserProfile),
@@ -101,6 +103,7 @@ type SlackClient struct {
 	*socketmode.Client
 	botMentionRgx   *regexp.Regexp
 	botUserID       string
+	teamID          string
 	logger          *logging.Logger
 	thinkingMessage string
 	userCache       map[string]*UserProfile
@@ -243,4 +246,16 @@ func (slackClient *SlackClient) SendMessage(channelID, threadTS, text string) {
 			}
 		}
 	}
+}
+
+// GetThreadURL constructs the Slack thread URL from channel ID and thread timestamp
+func (slackClient *SlackClient) GetThreadURL(channelID, threadTS string) string {
+	if channelID == "" || threadTS == "" || slackClient.teamID == "" {
+		return ""
+	}
+	// Format: https://app.slack.com/client/{team_id}/{channel_id}/thread/{channel_id}-{thread_ts}
+	// Remove the period from thread_ts and format it properly
+	threadTSFormatted := strings.ReplaceAll(threadTS, ".", "")
+	return fmt.Sprintf("https://app.slack.com/client/%s/%s/thread/%s-%s", 
+		slackClient.teamID, channelID, channelID, threadTS)
 }

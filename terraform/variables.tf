@@ -83,6 +83,41 @@ variable "notion_api_key" {
   sensitive   = true
 }
 
+# Langfuse credentials (for MCP server)
+variable "langfuse_public_key" {
+  description = "Langfuse Public API Key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "langfuse_secret_key" {
+  description = "Langfuse Secret API Key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "langfuse_host" {
+  description = "Langfuse API Host URL"
+  type        = string
+  default     = "https://cloud.langfuse.com"
+}
+
+# Xero credentials (for orby-cash MCP)
+variable "xero_client_id" {
+  description = "Xero OAuth Client ID"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "xero_redirect_uri" {
+  description = "Xero OAuth Redirect URI"
+  type        = string
+  default     = "http://localhost:8080/xero/callback"
+}
+
 variable "slack_signing_secret" {
   description = "Slack Signing Secret (for MCP server)"
   type        = string

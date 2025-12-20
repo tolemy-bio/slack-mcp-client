@@ -65,6 +65,15 @@ resource "google_compute_instance" "slack_client" {
     # Notion credentials (used by MCP server)
     notion-api-key = var.notion_api_key
     
+    # Langfuse credentials (used by MCP server)
+    langfuse-public-key = var.langfuse_public_key
+    langfuse-secret-key = var.langfuse_secret_key
+    langfuse-host       = var.langfuse_host
+    
+    # Xero credentials (used by orby-cash MCP)
+    xero-client-id    = var.xero_client_id
+    xero-redirect-uri = var.xero_redirect_uri
+    
     # MCP server configuration
     mcp-server-url   = var.mcp_server_url
     mcp-auth-token   = var.mcp_auth_token
