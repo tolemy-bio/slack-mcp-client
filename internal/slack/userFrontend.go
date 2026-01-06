@@ -257,5 +257,5 @@ func (slackClient *SlackClient) GetThreadURL(channelID, threadTS string) string 
 	// Remove the period from thread_ts and format it properly
 	threadTSFormatted := strings.ReplaceAll(threadTS, ".", "")
 	return fmt.Sprintf("https://app.slack.com/client/%s/%s/thread/%s-%s", 
-		slackClient.teamID, channelID, channelID, threadTS)
+		slackClient.teamID, channelID, channelID, threadTSFormatted)
 }
