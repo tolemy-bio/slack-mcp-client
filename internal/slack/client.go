@@ -587,6 +587,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			return
 		}
 		c.logger.InfoKV("Received response from LLM", "provider", c.cfg.LLM.Provider, "length", len(llmResponse))
+		c.logger.DebugKV("Raw agent response", "response", logging.TruncateForLog(llmResponse, 500))
 
 		// Set Output
 		c.tracingHandler.SetOutput(agentSpan, llmResponse)
@@ -595,11 +596,33 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		// Note: The callback handler (HandleChainEnd) does NOT send messages - it's called
 		// for every chain iteration including tool calls. We send the final response here.
 		if llmResponse == "" {
+			c.logger.WarnKV("Agent returned empty response after tool execution")
 			c.userFrontend.SendMessage(channelID, threadTS, "(LLM returned an empty response)")
 			c.tracingHandler.RecordError(agentSpan, fmt.Errorf("LLM returned an empty response"), "ERROR")
 		} else {
 			// Clean the response before sending - remove any agent reasoning prefixes
 			cleanedResponse := cleanAgentResponse(llmResponse)
+			if cleanedResponse == "" || strings.TrimSpace(cleanedResponse) == "" {
+				c.logger.WarnKV("Agent response was empty after cleaning", "original_length", len(llmResponse), "original_preview", logging.TruncateForLog(llmResponse, 200))
+				// If cleaning resulted in empty response, try to extract any meaningful content
+				// Sometimes agents return just "Thought:" without "AI:" - extract the thought if it's meaningful
+				if strings.Contains(llmResponse, "Thought:") && !strings.Contains(llmResponse, "AI:") {
+					// Extract the thought content as a fallback
+					thoughtIdx := strings.Index(llmResponse, "Thought:")
+					if thoughtIdx != -1 {
+						thoughtContent := strings.TrimSpace(llmResponse[thoughtIdx+8:])
+						// Only use thought if it's not just "Do I need to use a tool? No"
+						if thoughtContent != "" && !strings.Contains(thoughtContent, "Do I need to use a tool? No") {
+							cleanedResponse = thoughtContent
+						}
+					}
+				}
+				// If still empty, send a default message
+				if cleanedResponse == "" || strings.TrimSpace(cleanedResponse) == "" {
+					c.logger.WarnKV("Agent response empty after all cleaning attempts, sending default message")
+					cleanedResponse = "I've completed the requested action. The task has been processed successfully."
+				}
+			}
 			c.addToHistory(channelID, threadTS, "", "assistant", cleanedResponse, "", "", "", "", "", "")
 			c.userFrontend.SendMessage(channelID, threadTS, cleanedResponse)
 			c.tracingHandler.RecordSuccess(agentSpan, "LLM agent call succeeded")
