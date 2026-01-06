@@ -565,6 +565,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			systemPrompt = systemPrompt + fmt.Sprintf("\n\nSLACK CONTEXT:\n- This conversation is happening in Slack thread: %s\n- When creating bugs or features from this conversation, include this Slack thread URL in the slack_link parameter so we can track the original discussion.", slackThreadURL)
 		}
 		
+		c.logger.DebugKV("Calling LLM agent", "provider", c.cfg.LLM.Provider, "prompt_length", len(userPrompt))
 		llmResponse, err := c.llmMCPBridge.CallLLMAgent(
 			userDisplayName,
 			systemPrompt,
@@ -586,7 +587,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			agentSpan.End()
 			return
 		}
-		c.logger.InfoKV("Received response from LLM", "provider", c.cfg.LLM.Provider, "length", len(llmResponse))
+		c.logger.InfoKV("Received response from LLM agent", "provider", c.cfg.LLM.Provider, "length", len(llmResponse), "response_preview", logging.TruncateForLog(llmResponse, 200))
 		c.logger.DebugKV("Raw agent response", "response", logging.TruncateForLog(llmResponse, 500))
 
 		// Set Output
