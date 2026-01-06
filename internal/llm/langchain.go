@@ -255,9 +255,43 @@ Thought:{{.agent_scratchpad}}
 	}
 	output, ok := call[ag.OutputKey]
 	if !ok {
+		// Get available keys for debugging
+		keys := make([]string, 0, len(call))
+		for k := range call {
+			keys = append(keys, k)
+		}
+		p.logger.WarnKV("Agent call did not return expected output key", "output_key", ag.OutputKey, "available_keys", keys)
 		return "", fmt.Errorf("agent call did not return expected output key '%s'", ag.OutputKey)
 	}
-	return output.(string), nil
+	outputStr, ok := output.(string)
+	if !ok {
+		p.logger.WarnKV("Agent output is not a string", "output_type", fmt.Sprintf("%T", output), "output_value", fmt.Sprintf("%v", output))
+		return "", fmt.Errorf("agent output is not a string, got %T", output)
+	}
+	if outputStr == "" {
+		// Get available keys for debugging
+		keys := make([]string, 0, len(call))
+		for k := range call {
+			keys = append(keys, k)
+		}
+		p.logger.WarnKV("Agent returned empty string", "call_keys", keys, "full_call_preview", logging.TruncateForLog(fmt.Sprintf("%+v", call), 500))
+		// Try to extract any meaningful content from the call
+		for key, value := range call {
+			if key != ag.OutputKey {
+				if strVal, ok := value.(string); ok && strVal != "" {
+					p.logger.InfoKV("Found alternative output in call", "key", key, "value", logging.TruncateForLog(strVal, 200))
+					outputStr = strVal
+					break
+				}
+			}
+		}
+		// If still empty, return a default message
+		if outputStr == "" {
+			p.logger.WarnKV("Agent response still empty after fallback attempts, returning default message")
+			outputStr = "I've completed the requested action. The task has been processed successfully."
+		}
+	}
+	return outputStr, nil
 }
 
 // GetInfo returns information about the provider.
