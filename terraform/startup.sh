@@ -89,26 +89,26 @@ cat > /etc/orby/slack-client-config.json << EOF
   },
   "mcpServers": {
     "orby": {
-      "mode": "sse",
+      "transport": "http",
       "url": "${MCP_SERVER_URL}",
       "initialize_timeout_seconds": 30,
-      "headers": {
+      "httpHeaders": {
         "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
       }
     },
     "orby-langfuse": {
-      "mode": "sse",
+      "transport": "http",
       "url": "http://localhost:8080/rpc/langfuse",
       "initialize_timeout_seconds": 30,
-      "headers": {
+      "httpHeaders": {
         "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
       }
     },
     "orby-cash": {
-      "mode": "sse",
+      "transport": "http",
       "url": "http://localhost:8080/rpc/cash",
       "initialize_timeout_seconds": 30,
-      "headers": {
+      "httpHeaders": {
         "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
       }
     }
