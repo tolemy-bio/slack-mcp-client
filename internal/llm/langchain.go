@@ -180,7 +180,23 @@ func (p *LangChainProvider) GenerateAgentCompletion(ctx context.Context,
 		return "", errors.NewLLMError("client_not_initialized", "LangChainGo client not initialized")
 	}
 
-	p.logger.DebugKV("Calling LangChainGo GenerateAgentCompletion", "num_messages", len(history))
+	p.logger.InfoKV("=== AGENT START ===",
+		"user", userDisplayName,
+		"prompt_length", len(prompt),
+		"prompt_preview", logging.TruncateForLog(prompt, 200),
+		"history_count", len(history),
+		"tools_count", len(llmTools),
+		"max_iterations", maxAgentIterations,
+	)
+
+	// Log available tools
+	for i, tool := range llmTools {
+		p.logger.DebugKV("Agent tool available",
+			"index", i,
+			"name", tool.Name(),
+			"description_preview", logging.TruncateForLog(tool.Description(), 100),
+		)
+	}
 
 	// Convert our message format to a single prompt string
 	var historyBuilder strings.Builder
@@ -244,15 +260,56 @@ Thought:{{.agent_scratchpad}}
 `, historyBuilder.String())),
 	)
 
+	p.logger.InfoKV("Creating agent executor", "max_iterations", maxAgentIterations)
 	e := agents.NewExecutor(ag, agents.WithMaxIterations(maxAgentIterations))
 
+	p.logger.InfoKV("=== AGENT EXECUTOR STARTING ===", "input_preview", logging.TruncateForLog(prompt, 200))
+	
 	call, err := e.Call(ctx, map[string]any{
 		"input": prompt,
 	}, chains.WithTemperature(0.1))
+	
 	if err != nil {
-		p.logger.ErrorKV("LangChainGo Call request failed", "error", err)
+		// Enhanced error logging for multi-step failures
+		p.logger.ErrorKV("=== AGENT EXECUTOR FAILED ===",
+			"error", err.Error(),
+			"error_type", fmt.Sprintf("%T", err),
+			"context_err", ctx.Err(),
+		)
+		
+		// Check for specific error types
+		if ctx.Err() != nil {
+			p.logger.ErrorKV("Context error detected",
+				"context_error", ctx.Err().Error(),
+				"deadline_exceeded", ctx.Err() == context.DeadlineExceeded,
+				"canceled", ctx.Err() == context.Canceled,
+			)
+		}
+		
+		// Check if error message indicates iteration issues
+		errStr := err.Error()
+		if strings.Contains(errStr, "iteration") || strings.Contains(errStr, "max") {
+			p.logger.ErrorKV("Possible iteration limit reached", "error_details", errStr)
+		}
+		if strings.Contains(errStr, "parse") || strings.Contains(errStr, "format") {
+			p.logger.ErrorKV("Possible parsing error in agent response", "error_details", errStr)
+		}
+		
 		return "", errors.WrapLLMError(err, "request_failed", "Failed to generate completion from LangChainGo")
 	}
+	
+	p.logger.InfoKV("=== AGENT EXECUTOR COMPLETED ===", "call_keys_count", len(call))
+	
+	// Log all keys in the result for debugging
+	for key, value := range call {
+		valueStr := fmt.Sprintf("%v", value)
+		p.logger.DebugKV("Agent call result entry",
+			"key", key,
+			"value_type", fmt.Sprintf("%T", value),
+			"value_preview", logging.TruncateForLog(valueStr, 300),
+		)
+	}
+	
 	output, ok := call[ag.OutputKey]
 	if !ok {
 		// Get available keys for debugging
@@ -268,6 +325,13 @@ Thought:{{.agent_scratchpad}}
 		p.logger.WarnKV("Agent output is not a string", "output_type", fmt.Sprintf("%T", output), "output_value", fmt.Sprintf("%v", output))
 		return "", fmt.Errorf("agent output is not a string, got %T", output)
 	}
+	
+	p.logger.InfoKV("Agent output received",
+		"output_length", len(outputStr),
+		"output_preview", logging.TruncateForLog(outputStr, 300),
+		"is_empty", outputStr == "",
+	)
+	
 	if outputStr == "" {
 		// Get available keys for debugging
 		keys := make([]string, 0, len(call))
@@ -291,6 +355,8 @@ Thought:{{.agent_scratchpad}}
 			outputStr = "I've completed the requested action. The task has been processed successfully."
 		}
 	}
+	
+	p.logger.InfoKV("=== AGENT END ===", "final_output_length", len(outputStr))
 	return outputStr, nil
 }
 

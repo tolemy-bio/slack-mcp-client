@@ -1,0 +1,43 @@
+{
+  "$schema": "./schema/config-schema.json",
+  "version": "2.0",
+  "slack": {
+    "botToken": "${SLACK_BOT_TOKEN}",
+    "appToken": "${SLACK_APP_TOKEN}",
+    "messageHistory": 50,
+    "thinkingMessage": "Thinking..."
+  },
+  "llm": {
+    "provider": "openai",
+    "useAgent": true,
+    "useNativeTools": true,
+    "maxAgentIterations": 20,
+    "customPrompt": "You are a helpful assistant that can use tools to help users. When you need to use multiple tools, do so step by step and explain what you're doing.",
+    "providers": {
+      "openai": {
+        "model": "gpt-4o",
+        "apiKey": "${OPENAI_API_KEY}",
+        "temperature": 0.7,
+        "maxTokens": 4000
+      }
+    }
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${MCP_FILESYSTEM_PATH}"],
+      "tools": {
+        "allowList": ["read_file", "write_file", "list_directory"]
+      }
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "metricsPort": 8080,
+    "loggingLevel": "debug"
+  },
+  "observability": {
+    "enabled": false,
+    "provider": "disabled"
+  }
+}

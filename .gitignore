@@ -33,3 +33,6 @@ Thumbs.db
 mcp-servers.json
 config.json
 settings.local.json
+
+# Testing environment file
+.env.testing

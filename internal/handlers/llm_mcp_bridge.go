@@ -544,9 +544,24 @@ func (b *LLMMCPBridge) CallLLMAgent(userDisplayName, systemPrompt, prompt, conte
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
+	b.logger.InfoKV("=== BRIDGE CallLLMAgent START ===",
+		"user", userDisplayName,
+		"prompt_length", len(prompt),
+		"system_prompt_length", len(systemPrompt),
+		"context_history_length", len(contextHistory),
+		"available_tools_count", len(b.availableTools),
+		"timeout", "3m",
+	)
+
 	toolArr := make([]tools.Tool, 0, len(b.availableTools))
-	for _, t := range b.availableTools {
-		toolArr = append(toolArr, &t)
+	for name, t := range b.availableTools {
+		toolCopy := t // Make a copy to avoid pointer issues
+		toolArr = append(toolArr, &toolCopy)
+		b.logger.DebugKV("Adding tool to agent",
+			"tool_name", name,
+			"server_name", t.ServerName,
+			"has_client", t.Client != nil,
+		)
 	}
 
 	// Prepare messages with system prompt and context history
@@ -558,18 +573,38 @@ func (b *LLMMCPBridge) CallLLMAgent(userDisplayName, systemPrompt, prompt, conte
 			Role:    "system",
 			Content: "Previous conversation: " + contextHistory,
 		})
+		b.logger.DebugKV("Added context history to agent messages", "history_length", len(contextHistory))
 	}
 
 	// --- Use the specified provider via the registry ---
 	providerName := b.cfg.LLM.Provider
-	b.logger.InfoKV("Attempting to use LLM provider for chat completion", "provider", providerName)
+	b.logger.InfoKV("Calling LLM registry for agent completion",
+		"provider", providerName,
+		"tools_count", len(toolArr),
+		"max_iterations", b.cfg.LLM.MaxAgentIterations,
+	)
 
+	startTime := time.Now()
 	completion, err := b.llmRegistry.GenerateAgentCompletion(ctx, providerName, userDisplayName, systemPrompt, prompt, history, toolArr, callbackHandler, b.cfg.LLM.MaxAgentIterations)
+	duration := time.Since(startTime)
+
 	if err != nil {
-		// Error already logged by registry method potentially, but log here too for context
-		b.logger.ErrorKV("GenerateAgentCompletion failed", "provider", providerName, "error", err)
+		// Enhanced error logging
+		b.logger.ErrorKV("=== BRIDGE CallLLMAgent FAILED ===",
+			"provider", providerName,
+			"error", err.Error(),
+			"error_type", fmt.Sprintf("%T", err),
+			"duration", duration.String(),
+			"context_err", ctx.Err(),
+		)
 		return "", customErrors.WrapSlackError(err, "llm_request_failed", fmt.Sprintf("LLM request failed for provider '%s'", providerName))
 	}
+
+	b.logger.InfoKV("=== BRIDGE CallLLMAgent SUCCESS ===",
+		"provider", providerName,
+		"response_length", len(completion),
+		"duration", duration.String(),
+	)
 
 	return completion, nil
 }

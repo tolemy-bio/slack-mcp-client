@@ -212,12 +212,44 @@ func (r *ProviderRegistry) GenerateChatCompletion(ctx context.Context, providerN
 // GenerateAgentCompletion generates a chat completion using an agent using the specified provider (or primary if empty).
 // It checks for provider availability before making the call.
 func (r *ProviderRegistry) GenerateAgentCompletion(ctx context.Context, providerName string, userDisplayName, systemPrompt string, prompt string, history []RequestMessage, llmTools []tools.Tool, callbackHandler callbacks.Handler, maxAgentIterations int) (string, error) {
+	r.logger.InfoKV("=== REGISTRY GenerateAgentCompletion START ===",
+		"provider_name", providerName,
+		"user", userDisplayName,
+		"prompt_length", len(prompt),
+		"tools_count", len(llmTools),
+		"max_iterations", maxAgentIterations,
+	)
+
 	provider, err := r.GetProviderWithAvailabilityCheck(providerName) // Use the availability check method
 	if err != nil {
+		r.logger.ErrorKV("=== REGISTRY Provider not available ===",
+			"provider_name", providerName,
+			"error", err.Error(),
+		)
 		return "", err
 	}
 
 	info := provider.GetInfo()
-	r.logger.DebugKV("Using provider for chat completion", "name", info.Name)
-	return provider.GenerateAgentCompletion(ctx, userDisplayName, systemPrompt, prompt, history, llmTools, callbackHandler, maxAgentIterations)
+	r.logger.InfoKV("Using provider for agent completion",
+		"name", info.Name,
+		"display_name", info.DisplayName,
+		"configured", info.Configured,
+		"available", info.Available,
+	)
+
+	result, err := provider.GenerateAgentCompletion(ctx, userDisplayName, systemPrompt, prompt, history, llmTools, callbackHandler, maxAgentIterations)
+
+	if err != nil {
+		r.logger.ErrorKV("=== REGISTRY GenerateAgentCompletion FAILED ===",
+			"provider_name", providerName,
+			"error", err.Error(),
+		)
+		return "", err
+	}
+
+	r.logger.InfoKV("=== REGISTRY GenerateAgentCompletion SUCCESS ===",
+		"provider_name", providerName,
+		"result_length", len(result),
+	)
+	return result, nil
 }

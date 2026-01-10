@@ -528,6 +528,17 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			"provider": c.cfg.LLM.Provider,
 			"is_agent": "true",
 		})
+		
+		c.logger.InfoKV("=== AGENT PATH STARTED ===",
+			"channel", channelID,
+			"thread", threadTS,
+			"provider", c.cfg.LLM.Provider,
+			"prompt_length", len(userPrompt),
+			"prompt_preview", logging.TruncateForLog(userPrompt, 200),
+			"tools_count", len(c.discoveredTools),
+			"max_iterations", c.cfg.LLM.MaxAgentIterations,
+		)
+		
 		sendMsg := func(msg string) {
 			// Trace each messages sent by the agent
 			_, msgSpan := c.tracingHandler.StartSpan(agentCtx, "agent-message-send", "event", msg, map[string]string{
@@ -537,6 +548,10 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 				"message_length": fmt.Sprintf("%d", len(msg)),
 			})
 
+			c.logger.DebugKV("Agent intermediate message callback invoked",
+				"message_length", len(msg),
+				"message_preview", logging.TruncateForLog(msg, 200),
+			)
 			c.addToHistory(channelID, threadTS, "", "assistant", msg, "", "", "", "", "", "") // Original LLM response (tool call JSON)
 			c.userFrontend.SendMessage(channelID, threadTS, msg)
 			c.tracingHandler.RecordSuccess(msgSpan, "Agent message sent successfully")
@@ -565,29 +580,50 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			systemPrompt = systemPrompt + fmt.Sprintf("\n\nSLACK CONTEXT:\n- This conversation is happening in Slack thread: %s\n- When creating bugs or features from this conversation, include this Slack thread URL in the slack_link parameter so we can track the original discussion.", slackThreadURL)
 		}
 		
-		c.logger.DebugKV("Calling LLM agent", "provider", c.cfg.LLM.Provider, "prompt_length", len(userPrompt))
+		c.logger.InfoKV("Calling LLM agent bridge",
+			"provider", c.cfg.LLM.Provider,
+			"user_display_name", userDisplayName,
+			"system_prompt_length", len(systemPrompt),
+			"context_history_length", len(contextHistory),
+		)
 		llmResponse, err := c.llmMCPBridge.CallLLMAgent(
 			userDisplayName,
 			systemPrompt,
 			userPrompt,
 			contextHistory,
 			&agentCallbackHandler{
-				callbacks.SimpleHandler{},
-				sendMsg,
+				SimpleHandler: callbacks.SimpleHandler{},
+				sendMessage:   sendMsg,
+				iterationCount: 0,
 			})
 		duration := time.Since(startTime)
 
 		// Set duration
 		c.tracingHandler.SetDuration(agentSpan, duration)
 
+		c.logger.InfoKV("Agent call completed",
+			"duration", duration.String(),
+			"has_error", err != nil,
+		)
+
 		if err != nil {
-			c.logger.ErrorKV("Error from LLM provider", "provider", c.cfg.LLM.Provider, "error", err)
+			c.logger.ErrorKV("=== AGENT PATH FAILED ===",
+				"provider", c.cfg.LLM.Provider,
+				"error", err.Error(),
+				"error_type", fmt.Sprintf("%T", err),
+				"duration", duration.String(),
+			)
 			c.userFrontend.SendMessage(channelID, threadTS, fmt.Sprintf("Sorry, I encountered an error with the LLM provider ('%s'): %v", c.cfg.LLM.Provider, err))
 			c.tracingHandler.RecordError(agentSpan, err, "ERROR")
 			agentSpan.End()
 			return
 		}
-		c.logger.InfoKV("Received response from LLM agent", "provider", c.cfg.LLM.Provider, "length", len(llmResponse), "response_preview", logging.TruncateForLog(llmResponse, 200))
+		c.logger.InfoKV("=== AGENT PATH RESPONSE RECEIVED ===",
+			"provider", c.cfg.LLM.Provider,
+			"response_length", len(llmResponse),
+			"response_preview", logging.TruncateForLog(llmResponse, 200),
+			"duration", duration.String(),
+		)
 		c.logger.DebugKV("Raw agent response", "response", logging.TruncateForLog(llmResponse, 500))
 
 		// Set Output
