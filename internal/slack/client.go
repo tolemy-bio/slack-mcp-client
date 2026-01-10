@@ -577,7 +577,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		// Augment system prompt with Slack context
 		systemPrompt := c.cfg.LLM.CustomPrompt
 		if slackThreadURL != "" {
-			systemPrompt = systemPrompt + fmt.Sprintf("\n\nSLACK CONTEXT:\n- This conversation is happening in Slack thread: %s\n- When creating bugs or features from this conversation, include this Slack thread URL in the slack_link parameter so we can track the original discussion.", slackThreadURL)
+			systemPrompt = systemPrompt + fmt.Sprintf("\n\nSLACK CONTEXT:\n- This conversation is happening in Slack thread: %s\n- ⚠️ CRITICAL: When creating bugs or features, ALWAYS include slack_link=\"%s\" in the tool call parameters. This links the Notion entry back to the original Slack discussion.", slackThreadURL, slackThreadURL)
 		}
 		
 		c.logger.InfoKV("Calling LLM agent bridge",
