@@ -272,6 +272,10 @@ func CreateBlockMessage(text string, blockOptions BlockOptions) string {
 
 // FormatMarkdown formats text using Slack's mrkdwn syntax
 func FormatMarkdown(text string) string {
+	// Convert standard Markdown links [text](url) to Slack mrkdwn links <url|text>
+	// This must happen before other transformations that might affect the brackets
+	text = ConvertMarkdownLinksToSlack(text)
+
 	// Convert quoted strings to code blocks for better visualization
 	text = ConvertQuotedStringsToCode(text)
 
@@ -283,6 +287,15 @@ func FormatMarkdown(text string) string {
 	quotePattern := regexp.MustCompile(`(?m)^\s*>\s+(.*)$`)
 	text = quotePattern.ReplaceAllString(text, "> $1")
 
+	return text
+}
+
+// ConvertMarkdownLinksToSlack converts standard Markdown links [text](url) to Slack format <url|text>
+func ConvertMarkdownLinksToSlack(text string) string {
+	// Pattern to match Markdown links: [link text](url)
+	// Captures: $1 = link text, $2 = url
+	linkPattern := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	text = linkPattern.ReplaceAllString(text, "<$2|$1>")
 	return text
 }
 
