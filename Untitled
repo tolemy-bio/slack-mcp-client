@@ -1,0 +1,15 @@
+# LiteLLM Vertex AI Claude Proxy - Environment Variables
+# Docker Compose automatically reads this file
+
+# Ngrok Auth Token (REQUIRED)
+NGROK_AUTHTOKEN=36f4MZh8Eu2U8lmQBh1eL2T3u2b_7kjvDNcx1ZMdrb6YJGdX5
+LITELLM_MASTER_KEY=36f4MZh8Eu2U8lmQBh1eL2T3u2b_7kjvDNcx1ZMdrb6YJGdX5
+# Google Cloud Credentials (automatically detected from gcloud)
+# GOOGLE_APPLICATION_CREDENTIALS is set in docker-compose.yml
+
+POSTGRES_PASSWORD=litellm_dev_password_change_in_production
+
+# Consensus AI API Key
+CONSENSUS_API_KEY=1x95nPjwKBiFin7tq7YTXhDFnnEsDjcrHynKjnHxc94
+VERTEX_PROJECT=gen-lang-client-0335698828
+VERTEX_LOCATION=europe-west1

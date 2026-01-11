@@ -78,6 +78,7 @@ resource "google_compute_instance" "slack_client" {
     mcp-server-url   = var.mcp_server_url
     mcp-auth-token   = var.mcp_auth_token
     rag-persist-dir  = var.rag_persist_dir
+    disable-rag      = var.disable_rag ? "true" : "false"
     
     startup-script   = file("${path.module}/startup.sh")
   }

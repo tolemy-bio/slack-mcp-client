@@ -58,9 +58,9 @@ variable "litellm_model" {
 
 # MCP Server (now co-located on VM)
 variable "mcp_server_url" {
-  description = "URL of the MCP server SSE endpoint (co-located on localhost)"
+  description = "URL of the MCP server HTTP endpoint (co-located on localhost)"
   type        = string
-  default     = "http://localhost:8080/mcp/sse"
+  default     = "http://localhost:8080/mcp/orby"
 }
 
 variable "mcp_auth_token" {
@@ -129,6 +129,12 @@ variable "rag_persist_dir" {
   description = "Directory for ChromaDB vector store persistence"
   type        = string
   default     = "/var/lib/orby/chroma"
+}
+
+variable "disable_rag" {
+  description = "Disable RAG/semantic search (avoids embedding API calls)"
+  type        = bool
+  default     = true  # Disabled by default to avoid embedding rate limits
 }
 
 # Domain configuration

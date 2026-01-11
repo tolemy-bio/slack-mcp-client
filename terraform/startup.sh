@@ -29,6 +29,7 @@ XERO_CLIENT_ID=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-client-id")
 XERO_REDIRECT_URI=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-redirect-uri")
 MCP_SERVER_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-server-url")
 RAG_PERSIST_DIR=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/rag-persist-dir")
+DISABLE_RAG=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/disable-rag")
 GCP_PROJECT_ID=$(curl -s -H "$METADATA_HEADER" "http://metadata.google.internal/computeMetadata/v1/project/project-id")
 
 # Install dependencies
@@ -78,13 +79,17 @@ cat > /etc/orby/slack-client-config.json << EOF
   },
   "llm": {
     "provider": "openai",
-    "temperature": 0.1,
-    "maxTokens": 4096,
     "useNativeTools": true,
-    "openai": {
-      "model": "${LITELLM_MODEL}",
-      "apiKey": "${LITELLM_API_KEY}",
-      "baseUrl": "${LITELLM_BASE_URL}"
+    "useAgent": true,
+    "maxAgentIterations": 20,
+    "providers": {
+      "openai": {
+        "model": "${LITELLM_MODEL}",
+        "apiKey": "${LITELLM_API_KEY}",
+        "baseUrl": "${LITELLM_BASE_URL}",
+        "temperature": 0.1,
+        "maxTokens": 4096
+      }
     }
   },
   "mcpServers": {
@@ -98,19 +103,8 @@ cat > /etc/orby/slack-client-config.json << EOF
     },
     "orby-langfuse": {
       "transport": "http",
-      "url": "http://localhost:8080/rpc/langfuse",
-      "initialize_timeout_seconds": 30,
-      "httpHeaders": {
-        "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
-      }
-    },
-    "orby-cash": {
-      "transport": "http",
-      "url": "http://localhost:8080/rpc/cash",
-      "initialize_timeout_seconds": 30,
-      "httpHeaders": {
-        "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
-      }
+      "url": "http://localhost:8080/mcp/langfuse",
+      "initialize_timeout_seconds": 30
     }
   },
   "agent": {
@@ -263,6 +257,7 @@ ExecStart=/usr/bin/docker run --rm --name orby-mcp-server \
   -e XERO_CLIENT_ID=${XERO_CLIENT_ID} \
   -e XERO_REDIRECT_URI=${XERO_REDIRECT_URI} \
   -e RAG_PERSIST_DIR=/tmp/orby_chroma \
+  -e DISABLE_RAG=${DISABLE_RAG} \
   ${MCP_IMAGE}
 
 ExecStop=/usr/bin/docker stop orby-mcp-server
