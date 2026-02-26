@@ -265,10 +265,10 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 
 			parentTS := ev.ThreadTimeStamp
 			if parentTS == "" {
-				parentTS = ev.TimeStamp // Use the original message timestamp if no thread
+				parentTS = ev.TimeStamp
 			}
-			// Use handleUserPrompt for app mentions too, for consistency
-			go c.handleUserPrompt(strings.TrimSpace(messageText), ev.Channel, parentTS, ev.TimeStamp, profile)
+			// AppMentionEvent doesn't carry Files, but we'll pick up thread files in handleUserPrompt
+			go c.handleUserPrompt(strings.TrimSpace(messageText), ev.Channel, parentTS, ev.TimeStamp, profile, nil)
 
 		case *slackevents.MessageEvent:
 			isDirectMessage := strings.HasPrefix(ev.Channel, "D")
@@ -277,7 +277,7 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 			isBot := ev.BotID != "" || ev.SubType == "bot_message"
 
 			if isDirectMessage && isValidUser && isNotEdited && !isBot {
-				c.logger.InfoKV("Received direct message in channel", "channel", ev.Channel, "user", ev.User, "text", ev.Text, "ThreadTS", ev.ThreadTimeStamp)
+				c.logger.InfoKV("Received direct message in channel", "channel", ev.Channel, "user", ev.User, "text", ev.Text, "ThreadTS", ev.ThreadTimeStamp, "files", len(ev.Files))
 				profile, err := c.userFrontend.GetUserInfo(ev.User)
 				if err != nil {
 					c.logger.WarnKV("Failed to get user info", "user", ev.User, "error", err)
@@ -286,9 +286,15 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 
 				parentTS := ev.ThreadTimeStamp
 				if parentTS == "" {
-					parentTS = ev.TimeStamp // Use the original message timestamp if no thread
+					parentTS = ev.TimeStamp
 				}
-				go c.handleUserPrompt(ev.Text, ev.Channel, parentTS, ev.TimeStamp, profile) // Use goroutine to avoid blocking event loop
+
+				var eventFiles []slackevents.File
+				if len(ev.Files) > 0 {
+					eventFiles = ev.Files
+				}
+
+				go c.handleUserPrompt(ev.Text, ev.Channel, parentTS, ev.TimeStamp, profile, eventFiles)
 			}
 
 		default:
@@ -382,7 +388,8 @@ func (c *Client) getContextFromHistory(channelID string, threadTS string) string
 }
 
 // handleUserPrompt sends the user's text to the configured LLM provider.
-func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timestamp string, profile *UserProfile) {
+// eventFiles contains files attached to the triggering message (from MessageEvent).
+func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timestamp string, profile *UserProfile, eventFiles []slackevents.File) {
 	c.logger.DebugKV("Routing prompt via configured provider", "provider", c.cfg.LLM.Provider)
 	c.logger.DebugKV("User prompt", "text", userPrompt)
 
@@ -461,7 +468,41 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	// Get context from history
 	contextHistory := c.getContextFromHistory(channelID, threadTS)
 
-	c.addToHistory(channelID, threadTS, timestamp, "user", userPrompt, profile.UserID, profile.FirstName, profile.LastName, profile.RealName, profile.Email, profile.Title) // Add user message to history
+	// Process file attachments from the current message and thread
+	var fileAttachments []FileAttachment
+	botToken := c.userFrontend.GetBotToken()
+	if botToken != "" {
+		// Files from the triggering message (MessageEvent only)
+		for _, f := range eventFiles {
+			att, err := DownloadAndParseFile(botToken, f, c.logger)
+			if err != nil {
+				c.logger.WarnKV("Failed to download file", "name", f.Name, "error", err)
+				continue
+			}
+			fileAttachments = append(fileAttachments, *att)
+		}
+
+		// Also pick up files from thread replies that weren't in the triggering message
+		if replies != nil && len(eventFiles) == 0 {
+			threadFiles := ExtractFilesFromSlackMessages(replies)
+			for _, f := range threadFiles {
+				att, err := DownloadAndParseSlackFile(botToken, f, c.logger)
+				if err != nil {
+					c.logger.WarnKV("Failed to download thread file", "name", f.Name, "error", err)
+					continue
+				}
+				fileAttachments = append(fileAttachments, *att)
+			}
+		}
+
+		if len(fileAttachments) > 0 {
+			c.logger.InfoKV("Processed file attachments", "count", len(fileAttachments))
+			fileContext := FormatFileAttachmentsForPrompt(fileAttachments)
+			userPrompt = userPrompt + fileContext
+		}
+	}
+
+	c.addToHistory(channelID, threadTS, timestamp, "user", userPrompt, profile.UserID, profile.FirstName, profile.LastName, profile.RealName, profile.Email, profile.Title)
 
 	// Show a temporary "typing" indicator
 	c.userFrontend.SendMessage(channelID, threadTS, c.cfg.Slack.ThinkingMessage)

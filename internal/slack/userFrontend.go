@@ -26,6 +26,7 @@ type UserFrontend interface {
 	GetThreadReplies(channelID, threadTS string) ([]slack.Message, error)
 	GetUserInfo(userID string) (*UserProfile, error)
 	GetThreadURL(channelID, threadTS string) string
+	GetBotToken() string
 }
 
 func getLogLevel(stdLogger *logging.Logger) logging.LogLevel {
@@ -80,6 +81,7 @@ func GetSlackClient(botToken, appToken string, stdLogger *logging.Logger, thinki
 
 	return &SlackClient{
 		Client:          client,
+		botToken:        botToken,
 		botMentionRgx:   mentionRegex,
 		botUserID:       authTest.UserID,
 		teamID:          authTest.TeamID,
@@ -101,6 +103,7 @@ type UserProfile struct {
 
 type SlackClient struct {
 	*socketmode.Client
+	botToken        string
 	botMentionRgx   *regexp.Regexp
 	botUserID       string
 	teamID          string
@@ -247,6 +250,10 @@ func (slackClient *SlackClient) SendMessage(channelID, threadTS, text string) {
 			}
 		}
 	}
+}
+
+func (slackClient *SlackClient) GetBotToken() string {
+	return slackClient.botToken
 }
 
 // GetThreadURL constructs the Slack thread URL from channel ID and thread timestamp.

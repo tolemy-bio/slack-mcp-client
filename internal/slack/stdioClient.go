@@ -124,6 +124,9 @@ func (client StdioClient) SendMessage(channelID, threadTS, text string) {
 }
 
 func (client StdioClient) GetThreadURL(channelID, threadTS string) string {
-	// StdioClient doesn't have access to real Slack URLs
+	return ""
+}
+
+func (client StdioClient) GetBotToken() string {
 	return ""
 }
