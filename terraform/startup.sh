@@ -30,6 +30,9 @@ XERO_REDIRECT_URI=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-redirect-u
 MCP_SERVER_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-server-url")
 RAG_PERSIST_DIR=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/rag-persist-dir")
 DISABLE_RAG=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/disable-rag")
+ORBIT_AWS_REGION=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-region")
+ORBIT_AWS_ACCESS_KEY_ID=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-access-key-id")
+ORBIT_AWS_SECRET_ACCESS_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-secret-access-key")
 GCP_PROJECT_ID=$(curl -s -H "$METADATA_HEADER" "http://metadata.google.internal/computeMetadata/v1/project/project-id")
 
 # Install dependencies
@@ -258,6 +261,9 @@ ExecStart=/usr/bin/docker run --rm --name orby-mcp-server \
   -e XERO_REDIRECT_URI=${XERO_REDIRECT_URI} \
   -e RAG_PERSIST_DIR=/tmp/orby_chroma \
   -e DISABLE_RAG=${DISABLE_RAG} \
+  -e ORBIT_AWS_REGION=${ORBIT_AWS_REGION} \
+  -e ORBIT_AWS_ACCESS_KEY_ID=${ORBIT_AWS_ACCESS_KEY_ID} \
+  -e ORBIT_AWS_SECRET_ACCESS_KEY=${ORBIT_AWS_SECRET_ACCESS_KEY} \
   ${MCP_IMAGE}
 
 ExecStop=/usr/bin/docker stop orby-mcp-server

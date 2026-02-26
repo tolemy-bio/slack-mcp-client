@@ -74,6 +74,11 @@ resource "google_compute_instance" "slack_client" {
     xero-client-id    = var.xero_client_id
     xero-redirect-uri = var.xero_redirect_uri
     
+    # Orbit AWS credentials (for Orbit MCP - read-only DynamoDB + S3)
+    orbit-aws-region            = var.orbit_aws_region
+    orbit-aws-access-key-id     = var.orbit_aws_access_key_id
+    orbit-aws-secret-access-key = var.orbit_aws_secret_access_key
+    
     # MCP server configuration
     mcp-server-url   = var.mcp_server_url
     mcp-auth-token   = var.mcp_auth_token

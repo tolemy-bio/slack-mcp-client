@@ -124,6 +124,27 @@ variable "slack_signing_secret" {
   sensitive   = true
 }
 
+# Orbit AWS credentials (for Orbit MCP - read-only DynamoDB + S3 access)
+variable "orbit_aws_region" {
+  description = "AWS region for Orbit DynamoDB/S3"
+  type        = string
+  default     = "eu-west-2"
+}
+
+variable "orbit_aws_access_key_id" {
+  description = "AWS access key for Orbit data access"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "orbit_aws_secret_access_key" {
+  description = "AWS secret key for Orbit data access"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # RAG configuration
 variable "rag_persist_dir" {
   description = "Directory for ChromaDB vector store persistence"

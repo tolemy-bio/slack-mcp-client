@@ -21,7 +21,16 @@ func TestFormatMarkdown(t *testing.T) {
 			input:    "Created on \"2020-11-17T05:07:52Z\" or \"2020-11-17T05:07:54Z\"",
 			expected: "Created on `2020-11-17T05:07:52Z` or `2020-11-17T05:07:54Z`",
 		},
-		// Add more test cases as needed
+		{
+			name:     "Markdown link to Slack link",
+			input:    "Check [View in Notion](https://notion.so/page-123)",
+			expected: "Check <https://notion.so/page-123|View in Notion>",
+		},
+		{
+			name:     "Preserves existing Slack links",
+			input:    "Check <https://notion.so/page-123|View in Notion>",
+			expected: "Check <https://notion.so/page-123|View in Notion>",
+		},
 	}
 
 	for _, tt := range tests {
@@ -29,6 +38,87 @@ func TestFormatMarkdown(t *testing.T) {
 			result := FormatMarkdown(tt.input)
 			if result != tt.expected {
 				t.Errorf("FormatMarkdown() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFixSlackLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Already valid Slack link",
+			input:    "<https://notion.so/page-123|View in Notion>",
+			expected: "<https://notion.so/page-123|View in Notion>",
+		},
+		{
+			name:     "HTML-escaped Slack link",
+			input:    "&lt;https://notion.so/page-123|View in Notion&gt;",
+			expected: "<https://notion.so/page-123|View in Notion>",
+		},
+		{
+			name:     "Double-wrapped Slack link",
+			input:    "<<https://notion.so/page-123|View in Notion>>",
+			expected: "<https://notion.so/page-123|View in Notion>",
+		},
+		{
+			name:     "No links at all",
+			input:    "Just some plain text here",
+			expected: "Just some plain text here",
+		},
+		{
+			name:     "Multiple links in text",
+			input:    "See <https://notion.so/page-1|Bug #1> and <https://notion.so/page-2|Bug #2>",
+			expected: "See <https://notion.so/page-1|Bug #1> and <https://notion.so/page-2|Bug #2>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FixSlackLinks(tt.input)
+			if result != tt.expected {
+				t.Errorf("FixSlackLinks() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestContainsSlackLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{
+			name:     "Has Slack link with text",
+			input:    "Check <https://notion.so/page-123|View in Notion>",
+			expected: true,
+		},
+		{
+			name:     "Has Slack link without text",
+			input:    "Check <https://notion.so/page-123>",
+			expected: true,
+		},
+		{
+			name:     "No links",
+			input:    "Just plain text",
+			expected: false,
+		},
+		{
+			name:     "Markdown link not Slack link",
+			input:    "[View](https://notion.so/page-123)",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ContainsSlackLinks(tt.input)
+			if result != tt.expected {
+				t.Errorf("ContainsSlackLinks() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

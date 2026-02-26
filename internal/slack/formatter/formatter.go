@@ -276,6 +276,9 @@ func FormatMarkdown(text string) string {
 	// This must happen before other transformations that might affect the brackets
 	text = ConvertMarkdownLinksToSlack(text)
 
+	// Fix any broken or raw Slack-style links deterministically
+	text = FixSlackLinks(text)
+
 	// Convert quoted strings to code blocks for better visualization
 	text = ConvertQuotedStringsToCode(text)
 
@@ -299,18 +302,72 @@ func ConvertMarkdownLinksToSlack(text string) string {
 	return text
 }
 
+// slackLinkPlaceholder is used to protect Slack links from being mangled by other formatters
+const slackLinkPlaceholder = "\x00SLACKLINK"
+
+// FixSlackLinks deterministically fixes all link formats to proper Slack mrkdwn links.
+// Handles:
+//   - Raw URLs not wrapped in angle brackets: https://example.com → <https://example.com>
+//   - Bare Notion URLs with pipe text that aren't clickable
+//   - Duplicate angle brackets: <<url|text>> → <url|text>
+//   - Escaped angle brackets: &lt;url|text&gt; → <url|text>
+func FixSlackLinks(text string) string {
+	// Fix HTML-escaped angle brackets around links: &lt;https://...|text&gt; → <https://...|text>
+	escapedLinkPattern := regexp.MustCompile(`&lt;(https?://[^&]+?)&gt;`)
+	text = escapedLinkPattern.ReplaceAllString(text, "<$1>")
+
+	// Fix double-wrapped angle brackets: <<url|text>> → <url|text>
+	doubleWrappedPattern := regexp.MustCompile(`<<(https?://[^>]+)>>`)
+	text = doubleWrappedPattern.ReplaceAllString(text, "<$1>")
+
+	// Convert bare URLs (not already inside < >) into proper Slack links
+	// Negative lookbehind for < and | to avoid double-wrapping
+	bareURLPattern := regexp.MustCompile(`(?:^|[^<|])(https?://[^\s>|)]+)`)
+	text = bareURLPattern.ReplaceAllStringFunc(text, func(match string) string {
+		// Extract the URL - the match may include a leading char
+		urlPattern := regexp.MustCompile(`(https?://[^\s>|)]+)`)
+		urlMatch := urlPattern.FindString(match)
+		if urlMatch == "" {
+			return match
+		}
+		// Check if this URL is already inside a Slack link by looking at surrounding context
+		idx := strings.Index(match, urlMatch)
+		prefix := match[:idx]
+		return prefix + "<" + urlMatch + ">"
+	})
+
+	// Clean up any double-wrapped links that the bare URL conversion might have created
+	// e.g., <<url>> or <<url|text>> → <url> or <url|text>
+	text = regexp.MustCompile(`<<(https?://[^>]+)>>`).ReplaceAllString(text, "<$1>")
+
+	return text
+}
+
 // ConvertQuotedStringsToCode converts double-quoted strings to inline code blocks
-// for better visualization in Slack
+// for better visualization in Slack. Preserves URLs and Slack links.
 func ConvertQuotedStringsToCode(text string) string {
+	// Temporarily replace Slack links to protect them from being mangled
+	slackLinkPattern := regexp.MustCompile(`<(https?://[^>]+)>`)
+	var linkStore []string
+	text = slackLinkPattern.ReplaceAllStringFunc(text, func(match string) string {
+		linkStore = append(linkStore, match)
+		return fmt.Sprintf("%s%d%s", slackLinkPlaceholder, len(linkStore)-1, slackLinkPlaceholder)
+	})
+
 	// Regex to find double-quoted strings
 	// This pattern looks for "..." but avoids matching escaped quotes \"...\"
 	pattern := regexp.MustCompile(`"([^"\\]*(\\.[^"\\]*)*)"`)
 
-	// Replace each match with a code block
-	text = pattern.ReplaceAllString(text, "`$1`")
+	// Replace each match with a code block, but skip if it contains a URL
+	text = pattern.ReplaceAllStringFunc(text, func(match string) string {
+		if strings.Contains(match, "http://") || strings.Contains(match, "https://") || strings.Contains(match, slackLinkPlaceholder) {
+			return match
+		}
+		inner := match[1 : len(match)-1]
+		return "`" + inner + "`"
+	})
 
 	// Also handle specific patterns like "yyyy-MM-ddTHH:mm:ssZ" timestamps
-	// which are common in Kubernetes and other outputs
 	timestampPattern := regexp.MustCompile(`"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"`)
 	text = timestampPattern.ReplaceAllString(text, "`$1`")
 
@@ -318,7 +375,20 @@ func ConvertQuotedStringsToCode(text string) string {
 	identifierPattern := regexp.MustCompile(`"([\w-]+)"`)
 	text = identifierPattern.ReplaceAllString(text, "`$1`")
 
+	// Restore Slack links
+	for i, link := range linkStore {
+		placeholder := fmt.Sprintf("%s%d%s", slackLinkPlaceholder, i, slackLinkPlaceholder)
+		text = strings.Replace(text, placeholder, link, 1)
+	}
+
 	return text
+}
+
+// ContainsSlackLinks checks if the text contains Slack-formatted links <url|text> or <url>
+// Used to determine if EscapeText should be disabled (escaping would break links)
+func ContainsSlackLinks(text string) bool {
+	slackLinkPattern := regexp.MustCompile(`<https?://[^>]+>`)
+	return slackLinkPattern.MatchString(text)
 }
 
 // EscapeMarkdown escapes special characters in Markdown

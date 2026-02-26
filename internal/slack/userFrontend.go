@@ -218,6 +218,7 @@ func (slackClient *SlackClient) SendMessage(channelID, threadTS, text string) {
 		formattedText := formatter.FormatMarkdown(text)
 		options := formatter.DefaultOptions()
 		options.ThreadTS = threadTS
+		options.EscapeText = !formatter.ContainsSlackLinks(formattedText)
 		msgOptions = formatter.FormatMessage(formattedText, options)
 	}
 
@@ -248,14 +249,13 @@ func (slackClient *SlackClient) SendMessage(channelID, threadTS, text string) {
 	}
 }
 
-// GetThreadURL constructs the Slack thread URL from channel ID and thread timestamp
+// GetThreadURL constructs the Slack thread URL from channel ID and thread timestamp.
+// Uses the /archives/ format which is the canonical, stable URL format for Slack threads.
 func (slackClient *SlackClient) GetThreadURL(channelID, threadTS string) string {
-	if channelID == "" || threadTS == "" || slackClient.teamID == "" {
+	if channelID == "" || threadTS == "" {
 		return ""
 	}
-	// Format: https://app.slack.com/client/{team_id}/{channel_id}/thread/{channel_id}-{thread_ts}
-	// Remove the period from thread_ts and format it properly
-	threadTSFormatted := strings.ReplaceAll(threadTS, ".", "")
-	return fmt.Sprintf("https://app.slack.com/client/%s/%s/thread/%s-%s", 
-		slackClient.teamID, channelID, channelID, threadTSFormatted)
+	// Format: https://app.slack.com/archives/{channel_id}/p{timestamp_without_dot}
+	tsFormatted := strings.ReplaceAll(threadTS, ".", "")
+	return fmt.Sprintf("https://app.slack.com/archives/%s/p%s", channelID, tsFormatted)
 }
