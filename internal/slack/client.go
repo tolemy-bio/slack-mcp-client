@@ -215,7 +215,7 @@ func NewClient(userFrontend UserFrontend, stdLogger *logging.Logger, mcpClients 
 		historyLimit:    cfg.Slack.MessageHistory, // Store configured number of messages per channel
 		discoveredTools: discoveredTools,
 		tracingHandler:  tracingHandler,
-		imageDescriber:  NewImageDescriberFromConfig(cfg),
+		imageDescriber:  WithDescriptionCache(NewImageDescriberFromConfig(cfg)),
 	}, nil
 }
 

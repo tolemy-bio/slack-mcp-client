@@ -3,6 +3,7 @@ package slackbot
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tolemy-bio/slack-mcp-client/internal/config"
@@ -201,4 +203,41 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// cachingDescriber remembers successful descriptions by image content, so a
+// screenshot that is re-read on every follow-up message in a thread is only
+// sent to the vision model once. Failures are not cached.
+type cachingDescriber struct {
+	inner  ImageDescriber
+	mu     sync.Mutex
+	byHash map[[sha256.Size]byte]string
+}
+
+const descriptionCacheMaxEntries = 256
+
+// WithDescriptionCache wraps a describer with an in-memory content-hash cache.
+func WithDescriptionCache(inner ImageDescriber) ImageDescriber {
+	return &cachingDescriber{inner: inner, byHash: make(map[[sha256.Size]byte]string)}
+}
+
+func (c *cachingDescriber) DescribeImage(ctx context.Context, mimetype string, data []byte) (string, error) {
+	key := sha256.Sum256(data)
+	c.mu.Lock()
+	cached, ok := c.byHash[key]
+	c.mu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	desc, err := c.inner.DescribeImage(ctx, mimetype, data)
+	if err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	if len(c.byHash) >= descriptionCacheMaxEntries {
+		c.byHash = make(map[[sha256.Size]byte]string)
+	}
+	c.byHash[key] = desc
+	c.mu.Unlock()
+	return desc, nil
 }
