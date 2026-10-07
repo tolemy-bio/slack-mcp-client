@@ -75,6 +75,7 @@ type LLMConfig struct {
 // LLMProviderConfig contains provider-specific settings
 type LLMProviderConfig struct {
 	Model       string  `json:"model"`
+	VisionModel string  `json:"visionModel,omitempty"` // Model for screenshot descriptions (OpenAI-compatible provider only; default: Model)
 	APIKey      string  `json:"apiKey,omitempty"`
 	BaseURL     string  `json:"baseUrl,omitempty"`
 	Temperature float64 `json:"temperature,omitempty"`

@@ -2,6 +2,7 @@ package slackbot
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -56,7 +57,8 @@ func ExtractFilesFromSlackMessages(messages []slack.Message) []slack.File {
 }
 
 // DownloadAndParseFile downloads a file from Slack and extracts its text content.
-func DownloadAndParseFile(botToken string, file slackevents.File, logger *logging.Logger) (*FileAttachment, error) {
+// Supported screenshots (png/jpg/gif/webp) are described via the vision describer.
+func DownloadAndParseFile(botToken string, file slackevents.File, describer ImageDescriber, logger *logging.Logger) (*FileAttachment, error) {
 	downloadURL := file.URLPrivateDownload
 	if downloadURL == "" {
 		downloadURL = file.URLPrivate
@@ -64,57 +66,86 @@ func DownloadAndParseFile(botToken string, file slackevents.File, logger *loggin
 	if downloadURL == "" {
 		return nil, fmt.Errorf("no download URL for file %s", file.Name)
 	}
+	imageMime := imageMimetype(file.Name, file.Mimetype, file.Filetype)
 
 	if file.Size > maxFileSize {
-		return &FileAttachment{
-			Name:     file.Name,
-			Mimetype: file.Mimetype,
-			Filetype: file.Filetype,
-			Size:     file.Size,
-			Content:  fmt.Sprintf("[File too large to process: %s (%d bytes)]", file.Name, file.Size),
-		}, nil
+		return newAttachment(file, oversizeContent(file, imageMime)), nil
 	}
 
 	logger.InfoKV("Downloading Slack file", "name", file.Name, "type", file.Filetype, "mime", file.Mimetype, "size", file.Size)
+	body, err := downloadSlackFile(botToken, downloadURL, file.Name)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxFileSize {
+		return newAttachment(file, oversizeContent(file, imageMime)), nil
+	}
 
+	if imageMime != "" {
+		logger.InfoKV("Describing screenshot via vision model", "name", file.Name, "mime", imageMime, "bytes", len(body))
+		return newAttachment(file, describeScreenshot(context.Background(), describer, file.Name, slackFileURL(file), imageMime, body)), nil
+	}
+
+	content := extractText(file, body, logger)
+	if len(content) > maxContentChars {
+		content = content[:maxContentChars] + fmt.Sprintf("\n\n[... truncated at %d characters]", maxContentChars)
+	}
+	return newAttachment(file, content), nil
+}
+
+// downloadSlackFile fetches a private Slack file, reading at most maxFileSize+1 bytes
+// so callers can detect oversize bodies.
+func downloadSlackFile(botToken, downloadURL, name string) ([]byte, error) {
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for %s: %w", file.Name, err)
+		return nil, fmt.Errorf("failed to create request for %s: %w", name, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+botToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download %s: %w", file.Name, err)
+		return nil, fmt.Errorf("failed to download %s: %w", name, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download %s: HTTP %d", file.Name, resp.StatusCode)
+		return nil, fmt.Errorf("failed to download %s: HTTP %d", name, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFileSize))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFileSize+1))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", file.Name, err)
+		return nil, fmt.Errorf("failed to read %s: %w", name, err)
 	}
+	return body, nil
+}
 
-	content := extractText(file, body, logger)
-
-	if len(content) > maxContentChars {
-		content = content[:maxContentChars] + fmt.Sprintf("\n\n[... truncated at %d characters]", maxContentChars)
-	}
-
+func newAttachment(file slackevents.File, content string) *FileAttachment {
 	return &FileAttachment{
 		Name:     file.Name,
 		Mimetype: file.Mimetype,
 		Filetype: file.Filetype,
 		Size:     file.Size,
 		Content:  content,
-	}, nil
+	}
+}
+
+func oversizeContent(file slackevents.File, imageMime string) string {
+	if imageMime != "" {
+		return screenshotUnavailable(file.Name, slackFileURL(file), fmt.Sprintf("image exceeds the %d MB vision limit (%d bytes)", maxFileSize/(1024*1024), file.Size))
+	}
+	return fmt.Sprintf("[File too large to process: %s (%d bytes)]", file.Name, file.Size)
+}
+
+// slackFileURL is the URL the agent passes to attach_slack_file_to_linear_issue.
+func slackFileURL(file slackevents.File) string {
+	if file.URLPrivate != "" {
+		return file.URLPrivate
+	}
+	return file.URLPrivateDownload
 }
 
 // DownloadAndParseSlackFile downloads a slack.File (from thread replies) and extracts text content.
-func DownloadAndParseSlackFile(botToken string, file slack.File, logger *logging.Logger) (*FileAttachment, error) {
+func DownloadAndParseSlackFile(botToken string, file slack.File, describer ImageDescriber, logger *logging.Logger) (*FileAttachment, error) {
 	evFile := slackevents.File{
 		ID:                 file.ID,
 		Name:               file.Name,
@@ -124,7 +155,7 @@ func DownloadAndParseSlackFile(botToken string, file slack.File, logger *logging
 		URLPrivate:         file.URLPrivate,
 		URLPrivateDownload: file.URLPrivateDownload,
 	}
-	return DownloadAndParseFile(botToken, evFile, logger)
+	return DownloadAndParseFile(botToken, evFile, describer, logger)
 }
 
 func extractText(file slackevents.File, data []byte, logger *logging.Logger) string {

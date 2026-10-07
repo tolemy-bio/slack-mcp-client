@@ -56,6 +56,12 @@ variable "litellm_model" {
   default     = "claude-sonnet-4-5"  # Upgraded from Haiku for better reasoning
 }
 
+variable "vision_model" {
+  description = "LiteLLM model alias used to describe Slack image attachments (screenshots) before the agent runs"
+  type        = string
+  default     = "claude-sonnet-5"
+}
+
 # MCP Server (now co-located on VM)
 variable "mcp_server_url" {
   description = "URL of the MCP server HTTP endpoint (co-located on localhost)"

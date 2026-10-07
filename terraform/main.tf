@@ -61,6 +61,7 @@ resource "google_compute_instance" "slack_client" {
     litellm-api-key  = var.litellm_api_key
     litellm-base-url = var.litellm_base_url
     litellm-model    = var.litellm_model
+    vision-model     = var.vision_model
     
     # Notion credentials (used by MCP server)
     notion-api-key = var.notion_api_key

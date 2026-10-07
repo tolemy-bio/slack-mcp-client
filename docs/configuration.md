@@ -69,7 +69,9 @@ Below is the complete configuration schema showing all available options. Fields
     "providers": {
       "openai": {
         "model": "gpt-4o",                            // ⚙️ Default: "gpt-4o"
+        "visionModel": "claude-sonnet-5",             // 🔧 Optional: model for screenshot descriptions (default: same as model)
         "apiKey": "${OPENAI_API_KEY}",                // ⭐ Required if using OpenAI
+        "baseUrl": "https://llm.example.com/v1",      // 🔧 Optional; required for screenshot descriptions (OpenAI-compatible proxy)
         "temperature": 0.7,                           // ⚙️ Default: 0.7
         "maxTokens": 2000                             // 🔧 Optional
       },

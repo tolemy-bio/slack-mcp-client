@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 
@@ -37,7 +38,17 @@ type Client struct {
 	historyLimit    int
 	discoveredTools map[string]mcp.ToolInfo
 	tracingHandler  observability.TracingHandler
+	imageDescriber  ImageDescriber // Vision pre-pass for screenshot attachments (LiteLLM chat/completions)
 }
+
+// screenshotPromptGuidance tells the agent how to use vision descriptions of attached screenshots.
+const screenshotPromptGuidance = `
+
+SCREENSHOTS:
+- Attached screenshots appear in the message as [Screenshot "name" (Slack file URL: ...) — description: ...].
+- When a screenshot description is present, use it in the bug report: quote the exact error text, and include the page/URL and what looks wrong.
+- If a screenshot says "not analysed", tell the user it could not be read and why; do not invent its contents.
+- After creating the Linear issue, call attach_slack_file_to_linear_issue(issue_id, slack_file_url) once for EACH screenshot Slack file URL in the conversation.`
 
 // Message represents a message in the conversation history
 type Message struct {
@@ -204,6 +215,7 @@ func NewClient(userFrontend UserFrontend, stdLogger *logging.Logger, mcpClients 
 		historyLimit:    cfg.Slack.MessageHistory, // Store configured number of messages per channel
 		discoveredTools: discoveredTools,
 		tracingHandler:  tracingHandler,
+		imageDescriber:  NewImageDescriberFromConfig(cfg),
 	}, nil
 }
 
@@ -469,37 +481,9 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	contextHistory := c.getContextFromHistory(channelID, threadTS)
 
 	// Process file attachments from the current message and thread
-	var fileAttachments []FileAttachment
-	botToken := c.userFrontend.GetBotToken()
-	if botToken != "" {
-		// Files from the triggering message (MessageEvent only)
-		for _, f := range eventFiles {
-			att, err := DownloadAndParseFile(botToken, f, c.logger)
-			if err != nil {
-				c.logger.WarnKV("Failed to download file", "name", f.Name, "error", err)
-				continue
-			}
-			fileAttachments = append(fileAttachments, *att)
-		}
-
-		// Also pick up files from thread replies that weren't in the triggering message
-		if replies != nil && len(eventFiles) == 0 {
-			threadFiles := ExtractFilesFromSlackMessages(replies)
-			for _, f := range threadFiles {
-				att, err := DownloadAndParseSlackFile(botToken, f, c.logger)
-				if err != nil {
-					c.logger.WarnKV("Failed to download thread file", "name", f.Name, "error", err)
-					continue
-				}
-				fileAttachments = append(fileAttachments, *att)
-			}
-		}
-
-		if len(fileAttachments) > 0 {
-			c.logger.InfoKV("Processed file attachments", "count", len(fileAttachments))
-			fileContext := FormatFileAttachmentsForPrompt(fileAttachments)
-			userPrompt = userPrompt + fileContext
-		}
+	if fileAttachments := c.collectFileAttachments(eventFiles, replies); len(fileAttachments) > 0 {
+		c.logger.InfoKV("Processed file attachments", "count", len(fileAttachments))
+		userPrompt = userPrompt + FormatFileAttachmentsForPrompt(fileAttachments)
 	}
 
 	c.addToHistory(channelID, threadTS, timestamp, "user", userPrompt, profile.UserID, profile.FirstName, profile.LastName, profile.RealName, profile.Email, profile.Title)
@@ -616,7 +600,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		slackThreadURL := c.userFrontend.GetThreadURL(channelID, threadTS)
 		
 		// Augment system prompt with Slack context
-		systemPrompt := c.cfg.LLM.CustomPrompt
+		systemPrompt := c.cfg.LLM.CustomPrompt + screenshotPromptGuidance
 		if slackThreadURL != "" {
 			systemPrompt = systemPrompt + fmt.Sprintf("\n\nSLACK CONTEXT:\n- This conversation is happening in Slack thread: %s\n- ⚠️ CRITICAL: When creating bugs or features, ALWAYS include slack_link=\"%s\" in the tool call parameters. This links the Notion entry back to the original Slack discussion.", slackThreadURL, slackThreadURL)
 		}
@@ -707,6 +691,36 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		}
 		agentSpan.End()
 	}
+}
+
+// collectFileAttachments downloads files from the triggering message, or, when it has
+// none, from the thread replies. Download failures are logged and skipped.
+func (c *Client) collectFileAttachments(eventFiles []slackevents.File, replies []slack.Message) []FileAttachment {
+	botToken := c.userFrontend.GetBotToken()
+	if botToken == "" {
+		return nil
+	}
+	var attachments []FileAttachment
+	for _, f := range eventFiles {
+		att, err := DownloadAndParseFile(botToken, f, c.imageDescriber, c.logger)
+		if err != nil {
+			c.logger.WarnKV("Failed to download file", "name", f.Name, "error", err)
+			continue
+		}
+		attachments = append(attachments, *att)
+	}
+	if replies == nil || len(eventFiles) > 0 {
+		return attachments
+	}
+	for _, f := range ExtractFilesFromSlackMessages(replies) {
+		att, err := DownloadAndParseSlackFile(botToken, f, c.imageDescriber, c.logger)
+		if err != nil {
+			c.logger.WarnKV("Failed to download thread file", "name", f.Name, "error", err)
+			continue
+		}
+		attachments = append(attachments, *att)
+	}
+	return attachments
 }
 
 // cleanAgentResponse removes agent reasoning prefixes from the response.

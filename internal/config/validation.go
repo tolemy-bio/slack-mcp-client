@@ -185,6 +185,7 @@ func (c *Config) SubstituteEnvironmentVariables() {
 		provider.APIKey = substituteEnvVars(provider.APIKey)
 		provider.BaseURL = substituteEnvVars(provider.BaseURL)
 		provider.Model = substituteEnvVars(provider.Model)
+		provider.VisionModel = substituteEnvVars(provider.VisionModel)
 		c.LLM.Providers[name] = provider
 	}
 

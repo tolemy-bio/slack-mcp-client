@@ -158,6 +158,10 @@
           "type": "string",
           "description": "Model name to use for this provider"
         },
+        "visionModel": {
+          "type": "string",
+          "description": "Vision-capable model used to describe screenshot attachments via {baseUrl}/chat/completions (OpenAI-compatible provider only). Defaults to model."
+        },
         "apiKey": {
           "type": "string",
           "description": "API key or environment variable reference (${API_KEY_VAR})"
