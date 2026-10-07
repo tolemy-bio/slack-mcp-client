@@ -480,6 +480,11 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	// Get context from history
 	contextHistory := c.getContextFromHistory(channelID, threadTS)
 
+	// Acknowledge first: describing screenshots below can take several seconds
+	// (one vision call per image through LiteLLM), and the user should see the
+	// thinking message before that work starts, not after.
+	c.userFrontend.SendMessage(channelID, threadTS, c.cfg.Slack.ThinkingMessage)
+
 	// Process file attachments from the current message and thread
 	if fileAttachments := c.collectFileAttachments(eventFiles, replies); len(fileAttachments) > 0 {
 		c.logger.InfoKV("Processed file attachments", "count", len(fileAttachments))
@@ -487,9 +492,6 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	}
 
 	c.addToHistory(channelID, threadTS, timestamp, "user", userPrompt, profile.UserID, profile.FirstName, profile.LastName, profile.RealName, profile.Email, profile.Title)
-
-	// Show a temporary "typing" indicator
-	c.userFrontend.SendMessage(channelID, threadTS, c.cfg.Slack.ThinkingMessage)
 
 	if !c.cfg.LLM.UseAgent {
 		// Prepare the final prompt with custom prompt as system instruction
