@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	customErrors "github.com/tolemy-bio/slack-mcp-client/internal/common/errors"
@@ -93,7 +94,7 @@ func NewClient(transport, addressOrCommand string, serverName string, args []str
 			return nil, customErrors.WrapMCPError(err, "client_start", fmt.Sprintf("Failed to start MCP client for %s", addressOrCommand))
 		}
 	case "http":
-		mcpClient, err = client.NewStreamableHttpClient(addressOrCommand)
+		mcpClient, err = client.NewStreamableHttpClient(addressOrCommand, transport.WithHTTPHeaders(resolvedHeaders))
 		if err != nil {
 			return nil, customErrors.WrapMCPError(err, "client_creation", fmt.Sprintf("Failed to create MCP client for %s", addressOrCommand))
 		}

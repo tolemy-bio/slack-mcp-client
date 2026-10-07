@@ -66,7 +66,7 @@ variable "vision_model" {
 variable "mcp_server_url" {
   description = "URL of the MCP server HTTP endpoint (co-located on localhost)"
   type        = string
-  default     = "http://localhost:8080/mcp/orby"
+  default     = "http://127.0.0.1:8081/mcp/orby" # via the local nginx proxy that sets X-Local-Request
 }
 
 variable "mcp_auth_token" {

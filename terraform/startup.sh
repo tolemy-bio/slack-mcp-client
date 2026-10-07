@@ -29,6 +29,7 @@ LANGFUSE_HOST=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/langfuse-host")
 XERO_CLIENT_ID=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-client-id")
 XERO_REDIRECT_URI=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-redirect-uri")
 MCP_SERVER_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-server-url")
+MCP_AUTH_TOKEN=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-auth-token")
 RAG_PERSIST_DIR=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/rag-persist-dir")
 DISABLE_RAG=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/disable-rag")
 ORBIT_AWS_REGION=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-region")
@@ -108,8 +109,11 @@ cat > /etc/orby/slack-client-config.json << EOF
     },
     "orby-langfuse": {
       "transport": "http",
-      "url": "http://localhost:8080/mcp/langfuse",
-      "initialize_timeout_seconds": 30
+      "url": "http://127.0.0.1:8081/mcp/langfuse",
+      "initialize_timeout_seconds": 30,
+      "httpHeaders": {
+        "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+      }
     }
   },
   "agent": {
@@ -222,6 +226,9 @@ gcloud auth configure-docker --quiet
 # Pull the MCP server image from GCR
 MCP_IMAGE="gcr.io/${GCP_PROJECT_ID}/orby-mcp-server:latest"
 echo "Pulling MCP server image: ${MCP_IMAGE}"
+# Drop dangling image layers first: the 10 GB disk fills up after a few deploys
+# and the pull then fails with "failed to register layer".
+docker image prune -f || true
 docker pull ${MCP_IMAGE}
 
 # Create RAG persist directory
@@ -355,6 +362,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SECURITY: external clients must never be able to spoof the local-bypass header
+        proxy_set_header X-Local-Request "";
+        proxy_set_header Authorization $http_authorization;
         
         # SSE support (for /mcp/sse endpoint)
         proxy_set_header Connection '';
@@ -362,6 +373,27 @@ server {
         proxy_cache off;
         proxy_read_timeout 86400s;
         chunked_transfer_encoding off;
+    }
+}
+
+# Internal-only proxy for the local Slack client (no TLS). Only this listener
+# sets X-Local-Request, which the MCP server accepts in place of the bearer token.
+server {
+    listen 127.0.0.1:8081;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP 127.0.0.1;
+        proxy_set_header X-Forwarded-For 127.0.0.1;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Local-Request "true";
+
+        # Tool calls are capped server-side at 50s; keep headroom above that.
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
     }
 }
 NGINX_EOF
@@ -385,6 +417,27 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+
+# Internal-only proxy for the local Slack client (no TLS). Only this listener
+# sets X-Local-Request, which the MCP server accepts in place of the bearer token.
+server {
+    listen 127.0.0.1:8081;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP 127.0.0.1;
+        proxy_set_header X-Forwarded-For 127.0.0.1;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Local-Request "true";
+
+        # Tool calls are capped server-side at 50s; keep headroom above that.
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
     }
 }
 NGINX_INIT_EOF
