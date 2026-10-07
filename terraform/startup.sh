@@ -141,9 +141,16 @@ if ! nc -z localhost 8080 2>/dev/null; then
     exit 0
 fi
 
-# Check Slack client logs for "Available tools (0)"
-# This indicates it started without discovering any tools
-if journalctl -u slack-mcp-client --since "5 minutes ago" | grep -q "Available tools (0)"; then
+# Check the CURRENT client process's log for "Available tools (0)", which means it
+# started before the MCP server was ready. Only the current invocation counts:
+# a time window would keep matching the previous process's line after a healthy
+# restart and restart a working client every 2 minutes until the line aged out.
+INVOCATION_ID=$(systemctl show slack-mcp-client --property=InvocationID --value)
+if [ -z "$INVOCATION_ID" ]; then
+    echo "$LOG_PREFIX slack-mcp-client is not running, skipping check"
+    exit 0
+fi
+if journalctl _SYSTEMD_INVOCATION_ID="$INVOCATION_ID" | grep -q "Available tools (0)"; then
     # Also check if it hasn't been restarted recently
     LAST_RESTART=$(systemctl show slack-mcp-client --property=ActiveEnterTimestamp | cut -d'=' -f2)
     LAST_RESTART_EPOCH=$(date -d "$LAST_RESTART" +%s 2>/dev/null || echo 0)
