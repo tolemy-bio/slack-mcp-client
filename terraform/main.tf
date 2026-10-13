@@ -24,8 +24,51 @@ resource "google_service_account" "slack_client" {
   description  = "Service account for the Slack MCP client VM"
 }
 
-# Grant minimal permissions (only needs to call the MCP server, which is public)
-# No special GCP permissions needed
+# Secrets. Terraform owns the containers and who may read them, never the values: a
+# value set here would sit in the state file. Add each one by hand, e.g.
+#   printf %s "$VALUE" | gcloud secrets versions add orby-linear-api-key --data-file=-
+# The first seven are required by startup.sh; the rest switch a feature on when present.
+locals {
+  orby_secrets = toset([
+    "slack-bot-token",
+    "slack-app-token",
+    "slack-signing-secret",
+    "litellm-api-key",
+    "notion-api-key",
+    "mcp-auth-token",
+    "linear-api-key",
+    "langfuse-secret-key",
+    "linear-policy-github-token",
+    "orbit-aws-access-key-id",
+    "orbit-aws-secret-access-key",
+    "newswatch-session-secret",
+    "newswatch-google-client-secret",
+    "github-app-private-key",
+    "brave-api-key",
+    "consensus-api-key",
+  ])
+}
+
+resource "google_secret_manager_secret" "orby" {
+  for_each  = local.orby_secrets
+  secret_id = "orby-${each.key}"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    app = "orby"
+  }
+}
+
+# The VM may read these secrets and nothing else in Secret Manager.
+resource "google_secret_manager_secret_iam_member" "orby_vm" {
+  for_each  = google_secret_manager_secret.orby
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.slack_client.email}"
+}
 
 # The VM instance
 resource "google_compute_instance" "slack_client" {
@@ -50,43 +93,33 @@ resource "google_compute_instance" "slack_client" {
     access_config {}
   }
 
-  # Pass secrets and startup script via metadata (encrypted at rest)
+  # Plain configuration and the startup script. No secret belongs here: instance
+  # metadata is readable by anyone with compute.instances.get on the project and by
+  # every process on the VM. startup.sh reads secrets from Secret Manager instead.
   metadata = {
-    # Slack credentials (used by both Slack client and MCP server)
-    slack-bot-token      = var.slack_bot_token
-    slack-app-token      = var.slack_app_token
-    slack-signing-secret = var.slack_signing_secret
-    
-    # LiteLLM credentials (used by both services)
-    litellm-api-key  = var.litellm_api_key
     litellm-base-url = var.litellm_base_url
     litellm-model    = var.litellm_model
     vision-model     = var.vision_model
-    
-    # Notion credentials (used by MCP server)
-    notion-api-key = var.notion_api_key
-    
-    # Langfuse credentials (used by MCP server)
+
     langfuse-public-key = var.langfuse_public_key
-    langfuse-secret-key = var.langfuse_secret_key
     langfuse-host       = var.langfuse_host
-    
-    # Xero credentials (used by orby-cash MCP)
+
     xero-client-id    = var.xero_client_id
     xero-redirect-uri = var.xero_redirect_uri
-    
-    # Orbit AWS credentials (for Orbit MCP - read-only DynamoDB + S3)
-    orbit-aws-region            = var.orbit_aws_region
-    orbit-aws-access-key-id     = var.orbit_aws_access_key_id
-    orbit-aws-secret-access-key = var.orbit_aws_secret_access_key
-    
-    # MCP server configuration
-    mcp-server-url   = var.mcp_server_url
-    mcp-auth-token   = var.mcp_auth_token
-    rag-persist-dir  = var.rag_persist_dir
-    disable-rag      = var.disable_rag ? "true" : "false"
-    
-    startup-script   = file("${path.module}/startup.sh")
+
+    orbit-aws-region = var.orbit_aws_region
+    linear-team-id   = var.linear_team_id
+    github-app-id    = var.github_app_id
+
+    newswatch-gcs-backup-bucket = var.newswatch_gcs_backup_bucket
+    newswatch-allowed-domains   = var.newswatch_allowed_domains
+    newswatch-google-client-id  = var.newswatch_google_client_id
+
+    mcp-server-url  = var.mcp_server_url
+    rag-persist-dir = var.rag_persist_dir
+    disable-rag     = var.disable_rag ? "true" : "false"
+
+    startup-script = file("${path.module}/startup.sh")
   }
 
   service_account {
