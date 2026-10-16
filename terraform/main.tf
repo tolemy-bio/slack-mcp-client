@@ -38,7 +38,7 @@ resource "google_compute_instance" "slack_client" {
   boot_disk {
     initialize_params {
       image = "debian-cloud/debian-12"
-      size  = 10  # GB - minimal disk
+      size  = 20  # GB; resized live from 10 on 2026-10-16. Each Orby deploy leaves an image of up to ~1 GB
       type  = "pd-standard"
     }
   }
