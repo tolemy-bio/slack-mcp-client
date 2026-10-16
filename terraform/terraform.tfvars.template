@@ -8,25 +8,17 @@ zone       = "europe-west1-b"
 # Machine type (e2-micro is free tier eligible)
 machine_type = "e2-micro"
 
-# Slack credentials
-slack_bot_token      = "xoxb-your-bot-token"
-slack_app_token      = "xapp-your-app-token"
-slack_signing_secret = "your-signing-secret"
+# No secret goes in this file or in instance metadata. Slack, LiteLLM, Notion, Linear and
+# the other credentials live in Secret Manager as orby-<name> (see main.tf); add each with
+#   printf %s "$VALUE" | gcloud secrets versions add orby-<name> --data-file=-
 
-# LiteLLM credentials
-litellm_api_key  = "your-litellm-api-key"
+# LiteLLM
 litellm_base_url = "https://litellm.tolemy.bio/v1"
-litellm_model    = "claude-3-5-haiku-20241022"
+# litellm_model  = "claude-sonnet-4-5"  # (default)
 
-# Notion credentials (for MCP server)
-notion_api_key = "secret_your-notion-api-key"
+# NewsWatch admin sign-in
+# newswatch_google_client_id = "<client id>.apps.googleusercontent.com"
 
-# MCP Server (now co-located on localhost)
-# mcp_server_url = "http://localhost:8080/rpc"  # (default, no need to set)
-# mcp_auth_token = ""  # (not needed for localhost)
-
-# RAG configuration
-# rag_persist_dir = "/var/lib/orby/chroma"  # (default, no need to set)
-
-
-
+# MCP server
+# mcp_server_url  = "http://127.0.0.1:8081/mcp/orby"  # (default)
+# rag_persist_dir = "/var/lib/orby/chroma"            # (default)
