@@ -35,6 +35,7 @@ type Config struct {
 	Retry          RetryConfig                `json:"retry,omitempty"`
 	Reload         ReloadConfig               `json:"reload,omitempty"`
 	Observability  ObservabilityConfig        `json:"observability,omitempty"`
+	CustomerContext CustomerContextConfig     `json:"customerContext,omitempty"`
 	UseStdIOClient bool                       `json:"useStdIOClient,omitempty"` // Use terminal client instead of a real slack bot, for local development
 }
 
@@ -263,6 +264,7 @@ func (c *Config) ApplyDefaults() {
 	c.applyMonitoringDefaults()
 	c.applyMCPDefaults()
 	c.applyObservabilityDefaults()
+	c.applyCustomerContextDefaults()
 }
 
 // migrateAgentConfig migrates the legacy "agent" config to the new LLM config format

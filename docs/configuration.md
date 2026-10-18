@@ -385,6 +385,49 @@ In the "App Home" section:
 
 **Priority**: `customPromptFile` takes precedence over `customPrompt` if both are set
 
+## Customer Context (Orby beta customers)
+
+`customerContext` lets the Orby server decide, per Slack conversation, who Orby is talking to and which tools
+it may use. Beta customers (for example in `#anomer-orbit-beta`) then only reach their own organisation's
+issues. It is **off by default**; with it off, nothing below happens.
+
+```json
+{
+  "customerContext": {
+    "enabled": true,
+    "mcpServer": "orby",
+    "url": "http://127.0.0.1:8081/api/slack-context",
+    "timeoutSeconds": 10
+  }
+}
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` | Turn the feature on |
+| `mcpServer` | `"orby"` | `mcpServers` entry of the Orby MCP server. Only its tool calls carry `_orby_context`; its `httpHeaders` authenticate the context endpoint; bare names in `allowed_tools` refer to its tools |
+| `url` | derived | Context endpoint. Default: scheme and host of that server's `url` + `/api/slack-context` |
+| `timeoutSeconds` | `10` | Timeout of each context endpoint call |
+
+When enabled, for every message:
+
+1. The client builds the identity facts from Slack: channel ID and type, user ID, the user's team and guest
+   flags from `users.info` (cached 10 minutes), and the bot's own workspace (`auth.test`). If `users.info`
+   fails, the user's team is sent empty so the server does not treat them as staff.
+2. It POSTs the facts to the context endpoint. The answer's `mode` decides:
+   - `blocked`: the server's `message` is posted in the thread and the model is not called.
+   - `customer`: the model only sees the tools in `allowed_tools` (across all MCP servers) and is told
+     which customer it is helping.
+   - `internal`: unchanged behaviour (`allowed_tools: null` means every tool).
+   - Endpoint unreachable, non-2xx or an invalid answer: Orby replies that it is unavailable and does not
+     call the model (fail closed).
+3. Every MCP tool call is checked in `mcp.Client.CallTool` against `allowed_tools` (a tool not in the
+   list is refused even if the model names it), and calls to the Orby server carry the facts as the
+   `_orby_context` argument, overwriting any value the model supplied. Other MCP servers never receive
+   it. Tools of other servers must be listed as `<server>_<tool>` in `allowed_tools`.
+
+`customerContext` cannot be combined with `rag.enabled`: RAG tools run in-process and bypass the tool guard.
+
 ## Kubernetes Deployment
 
 ### Basic Helm Configuration

@@ -23,6 +23,7 @@ import (
 	"github.com/tolemy-bio/slack-mcp-client/internal/config"
 	"github.com/tolemy-bio/slack-mcp-client/internal/mcp"
 	"github.com/tolemy-bio/slack-mcp-client/internal/monitoring"
+	"github.com/tolemy-bio/slack-mcp-client/internal/orbycontext"
 	"github.com/tolemy-bio/slack-mcp-client/internal/rag"
 
 	slackbot "github.com/tolemy-bio/slack-mcp-client/internal/slack"
@@ -393,6 +394,23 @@ func processSingleMCPServer(
 	}
 }
 
+// newCustomerContextResolver returns the client for the Orby server's
+// /api/slack-context endpoint, or nil when customerContext is disabled. It uses
+// the Orby MCP server's own httpHeaders, so it authenticates the same way.
+func newCustomerContextResolver(logger *logging.Logger, cfg *config.Config) (orbycontext.Resolver, error) {
+	if !cfg.CustomerContext.Enabled {
+		return nil, nil
+	}
+	endpoint, err := cfg.CustomerContextURL()
+	if err != nil {
+		return nil, err
+	}
+	server := cfg.MCPServers[cfg.CustomerContext.MCPServer]
+	headers := resolveHTTPHeaders(server.HTTPHeaders, logger)
+	logger.InfoKV("customerContext enabled", "endpoint", endpoint, "mcp_server", cfg.CustomerContext.MCPServer)
+	return orbycontext.NewHTTPResolver(endpoint, headers, cfg.CustomerContext.Timeout()), nil
+}
+
 // resolveHTTPHeaders resolves environment variables in HTTP headers
 func resolveHTTPHeaders(headers map[string]string, logger *logging.Logger) map[string]string {
 	resolvedHeaders := make(map[string]string)
@@ -645,6 +663,11 @@ func startSlackClient(ctx context.Context, logger *logging.Logger, mcpClients ma
 		}
 	}
 
+	contextResolver, err := newCustomerContextResolver(logger, cfg)
+	if err != nil {
+		logger.Fatal("Failed to configure customerContext: %v", err)
+	}
+
 	// Use the structured logger for the Slack client
 	client, err := slackbot.NewClient(
 		userFrontend,
@@ -652,6 +675,7 @@ func startSlackClient(ctx context.Context, logger *logging.Logger, mcpClients ma
 		mcpClients,      // Pass the map of initialized clients
 		discoveredTools, // Pass the map of tool information
 		cfg,             // Pass the whole config object
+		contextResolver, // nil unless customerContext is enabled
 	)
 	if err != nil {
 		logger.Fatal("Failed to initialize Slack client: %v", err)

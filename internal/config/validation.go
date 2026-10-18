@@ -44,6 +44,10 @@ func (c *Config) ValidateAfterDefaults() error {
 		}
 	}
 
+	if err := c.validateCustomerContext(); err != nil {
+		return err
+	}
+
 	// Validate observability configuration
 	if c.Observability.Enabled {
 		if c.Observability.Provider == ObservabilityProviderLangfuse {

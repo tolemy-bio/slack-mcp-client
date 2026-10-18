@@ -35,8 +35,8 @@ type LLMMCPBridge struct {
 	cfg            *config.Config          // Configuration
 }
 
-// generateToolPrompt generates the prompt string for available tools
-func (b *LLMMCPBridge) generateToolPrompt() string {
+// generateToolPrompt generates the prompt string for the given tools
+func (b *LLMMCPBridge) generateToolPrompt(availableTools map[string]mcp.ToolInfo) string {
 	var promptBuilder strings.Builder
 
 	// Add custom prompt first if provided
@@ -50,7 +50,7 @@ func (b *LLMMCPBridge) generateToolPrompt() string {
 		}
 	}
 
-	if len(b.availableTools) == 0 {
+	if len(availableTools) == 0 {
 		// If no tools but we have custom prompt, return custom prompt only
 		if b.cfg.LLM.CustomPrompt != "" {
 			return b.cfg.LLM.CustomPrompt
@@ -61,7 +61,7 @@ func (b *LLMMCPBridge) generateToolPrompt() string {
 	promptBuilder.WriteString("You have access to the following tools. Analyze the user's request to determine if a tool is needed.\n\n")
 
 	// Debug: log the available tools
-	b.logger.DebugKV("Generating tool prompt", "tool_count", len(b.availableTools))
+	b.logger.DebugKV("Generating tool prompt", "tool_count", len(availableTools))
 
 	// Clear instructions on how to format the JSON response
 	promptBuilder.WriteString("TOOL USAGE INSTRUCTIONS:\n")
@@ -73,7 +73,7 @@ func (b *LLMMCPBridge) generateToolPrompt() string {
 
 	promptBuilder.WriteString("Available Tools:\n")
 
-	for name, toolInfo := range b.availableTools {
+	for name, toolInfo := range availableTools {
 		promptBuilder.WriteString(fmt.Sprintf("\nTool Name: %s\n", name))
 		promptBuilder.WriteString(fmt.Sprintf("  Description: %s\n", toolInfo.ToolDescription))
 
@@ -539,22 +539,30 @@ func (b *LLMMCPBridge) extractSimpleKeyValuePairs(text string) (map[string]inter
 	return result, len(result) > 0
 }
 
-func (b *LLMMCPBridge) CallLLMAgent(userDisplayName, systemPrompt, prompt, contextHistory string, callbackHandler callbacks.Handler) (string, error) {
+// CallLLMAgent runs the agent. ctx must carry the conversation scope when
+// customerContext is enabled: it decides the tools offered to the model, and the
+// agent passes it on to every tool call.
+func (b *LLMMCPBridge) CallLLMAgent(ctx context.Context, userDisplayName, systemPrompt, prompt, contextHistory string, callbackHandler callbacks.Handler) (string, error) {
 	// Create a context with an appropriate timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
+
+	conversationTools, err := b.toolsForConversation(ctx)
+	if err != nil {
+		return "", err
+	}
 
 	b.logger.InfoKV("=== BRIDGE CallLLMAgent START ===",
 		"user", userDisplayName,
 		"prompt_length", len(prompt),
 		"system_prompt_length", len(systemPrompt),
 		"context_history_length", len(contextHistory),
-		"available_tools_count", len(b.availableTools),
+		"available_tools_count", len(conversationTools),
 		"timeout", "3m",
 	)
 
-	toolArr := make([]tools.Tool, 0, len(b.availableTools))
-	for name, t := range b.availableTools {
+	toolArr := make([]tools.Tool, 0, len(conversationTools))
+	for name, t := range conversationTools {
 		toolCopy := t // Make a copy to avoid pointer issues
 		toolArr = append(toolArr, &toolCopy)
 		b.logger.DebugKV("Adding tool to agent",
@@ -610,10 +618,17 @@ func (b *LLMMCPBridge) CallLLMAgent(userDisplayName, systemPrompt, prompt, conte
 }
 
 // CallLLM generates a text completion using the specified provider from the registry.
-func (b *LLMMCPBridge) CallLLM(prompt, contextHistory string) (*llms.ContentChoice, error) {
+// ctx must carry the conversation scope when customerContext is enabled: it
+// decides the tools described to the model.
+func (b *LLMMCPBridge) CallLLM(ctx context.Context, prompt, contextHistory string) (*llms.ContentChoice, error) {
 	// Create a context with appropriate timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
+
+	conversationTools, err := b.toolsForConversation(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get the provider name from config
 	providerName := b.cfg.LLM.Provider
@@ -634,7 +649,7 @@ func (b *LLMMCPBridge) CallLLM(prompt, contextHistory string) (*llms.ContentChoi
 
 	if !b.cfg.LLM.UseNativeTools {
 		// Generate the system prompt with tool information
-		systemPrompt := b.generateToolPrompt()
+		systemPrompt := b.generateToolPrompt(conversationTools)
 
 		// Add system prompt with tool info if available
 		if systemPrompt != "" {
@@ -645,7 +660,7 @@ func (b *LLMMCPBridge) CallLLM(prompt, contextHistory string) (*llms.ContentChoi
 		}
 	} else {
 		tools := []llms.Tool{}
-		for name, tool := range b.availableTools {
+		for name, tool := range conversationTools {
 			tools = append(tools, llms.Tool{
 				Type: "function",
 				Function: &llms.FunctionDefinition{
