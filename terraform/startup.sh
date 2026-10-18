@@ -144,6 +144,9 @@ cat > /etc/orby/slack-client-config.json << EOF
       }
     }
   },
+  "customerContext": {
+    "enabled": true
+  },
   "agent": {
     "enabled": true,
     "maxIterations": 15,

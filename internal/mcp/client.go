@@ -32,7 +32,8 @@ type Client struct {
 	client      client.MCPClient
 	serverAddr  string
 	serverName  string
-	initialized bool // Track if the client has been successfully initialized
+	initialized bool               // Track if the client has been successfully initialized
+	guard       *conversationGuard // Set by RequireConversationScope; nil keeps today's behaviour
 
 	closeOnce sync.Once  // Ensures close logic runs only once
 	closeMu   sync.Mutex // Protects access during close
@@ -185,6 +186,14 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args map[string]
 		originalToolName := toolName
 		toolName = strings.TrimPrefix(toolName, prefix)
 		c.logger.DebugKV("Stripped prefix from tool name", "original", originalToolName, "stripped", toolName)
+	}
+
+	// Every MCP tool call passes here: enforce the conversation's allowed tools
+	// and attach the Slack identity facts after the model's arguments.
+	args, err := guardToolCall(ctx, c.guard, c.serverName, toolName, args)
+	if err != nil {
+		c.logger.WarnKV("Tool call refused", "tool", toolName, "server", c.serverName, "error", err)
+		return "", err
 	}
 
 	// Create a proper CallToolRequest

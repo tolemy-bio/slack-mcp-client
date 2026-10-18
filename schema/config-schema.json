@@ -124,6 +124,33 @@
       },
       "additionalProperties": false
     },
+    "customerContext": {
+      "type": "object",
+      "description": "Per-conversation scoping by the Orby server: beta customers only reach their own organisation's issues. Off by default.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ask the Orby server (POST /api/slack-context) which mode applies before every model call, restrict tools accordingly and attach _orby_context to Orby tool calls. Fails closed when the endpoint is unavailable."
+        },
+        "mcpServer": {
+          "type": "string",
+          "default": "orby",
+          "description": "mcpServers entry of the Orby MCP server: only its calls carry _orby_context and its httpHeaders authenticate the context endpoint"
+        },
+        "url": {
+          "type": "string",
+          "description": "Context endpoint URL. Default: scheme and host of the Orby MCP server url + /api/slack-context"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Timeout for each context endpoint call"
+        }
+      },
+      "additionalProperties": false
+    },
     "monitoring": {
       "type": "object",
       "properties": {

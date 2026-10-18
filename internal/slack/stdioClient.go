@@ -7,6 +7,7 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/orbycontext"
 	"io"
 	"os"
 	"os/user"
@@ -128,5 +129,17 @@ func (client StdioClient) GetThreadURL(channelID, threadTS string) string {
 }
 
 func (client StdioClient) GetBotToken() string {
+	return ""
+}
+
+// GetUserFacts is not available in the terminal client: there is no Slack user.
+// With customerContext enabled the facts then carry no team, and the server's
+// staff rule fails closed.
+func (client StdioClient) GetUserFacts(userID string) (*orbycontext.UserFacts, error) {
+	return nil, fmt.Errorf("user facts are not available in the stdio client")
+}
+
+// GetHomeTeamID returns "": the terminal client is not connected to a workspace.
+func (client StdioClient) GetHomeTeamID() string {
 	return ""
 }
