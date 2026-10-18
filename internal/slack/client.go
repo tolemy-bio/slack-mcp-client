@@ -23,6 +23,7 @@ import (
 	"github.com/tolemy-bio/slack-mcp-client/internal/llm"
 	"github.com/tolemy-bio/slack-mcp-client/internal/mcp"
 	"github.com/tolemy-bio/slack-mcp-client/internal/observability"
+	"github.com/tolemy-bio/slack-mcp-client/internal/orbycontext"
 	"github.com/tolemy-bio/slack-mcp-client/internal/rag"
 )
 
@@ -38,7 +39,8 @@ type Client struct {
 	historyLimit    int
 	discoveredTools map[string]mcp.ToolInfo
 	tracingHandler  observability.TracingHandler
-	imageDescriber  ImageDescriber // Vision pre-pass for screenshot attachments (LiteLLM chat/completions)
+	imageDescriber  ImageDescriber       // Vision pre-pass for screenshot attachments (LiteLLM chat/completions)
+	contextResolver orbycontext.Resolver // Asks the Orby server what a conversation may do (customerContext)
 }
 
 // screenshotPromptGuidance tells the agent how to use vision descriptions of attached screenshots.
@@ -64,9 +66,10 @@ type Message struct {
 	Title          string
 }
 
-// NewClient creates a new Slack client instance.
+// NewClient creates a new Slack client instance. contextResolver is required
+// when cfg.CustomerContext is enabled and ignored otherwise.
 func NewClient(userFrontend UserFrontend, stdLogger *logging.Logger, mcpClients map[string]*mcp.Client,
-	discoveredTools map[string]mcp.ToolInfo, cfg *config.Config) (*Client, error) {
+	discoveredTools map[string]mcp.ToolInfo, cfg *config.Config, contextResolver orbycontext.Resolver) (*Client, error) {
 
 	// MCP clients are now optional - if none are provided, we'll just use LLM capabilities
 	if mcpClients == nil {
@@ -76,6 +79,10 @@ func NewClient(userFrontend UserFrontend, stdLogger *logging.Logger, mcpClients 
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
+	if cfg.CustomerContext.Enabled && contextResolver == nil {
+		return nil, fmt.Errorf("customerContext is enabled but no context resolver was provided")
+	}
+	guardMCPClients(cfg, mcpClients, discoveredTools)
 
 	clientLogger := userFrontend.GetLogger()
 
@@ -216,6 +223,7 @@ func NewClient(userFrontend UserFrontend, stdLogger *logging.Logger, mcpClients 
 		discoveredTools: discoveredTools,
 		tracingHandler:  tracingHandler,
 		imageDescriber:  WithDescriptionCache(NewImageDescriberFromConfig(cfg)),
+		contextResolver: contextResolver,
 	}, nil
 }
 
@@ -279,8 +287,9 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 			if parentTS == "" {
 				parentTS = ev.TimeStamp
 			}
-			// AppMentionEvent doesn't carry Files, but we'll pick up thread files in handleUserPrompt
-			go c.handleUserPrompt(strings.TrimSpace(messageText), ev.Channel, parentTS, ev.TimeStamp, profile, nil)
+			// AppMentionEvent doesn't carry Files, but we'll pick up thread files in handleUserPrompt.
+			// It doesn't carry channel_type either: derive it from the channel ID.
+			go c.handleUserPrompt(strings.TrimSpace(messageText), ev.Channel, orbycontext.ChannelTypeFromID(ev.Channel), parentTS, ev.TimeStamp, profile, nil)
 
 		case *slackevents.MessageEvent:
 			isDirectMessage := strings.HasPrefix(ev.Channel, "D")
@@ -306,7 +315,11 @@ func (c *Client) handleEventMessage(event slackevents.EventsAPIEvent) {
 					eventFiles = ev.Files
 				}
 
-				go c.handleUserPrompt(ev.Text, ev.Channel, parentTS, ev.TimeStamp, profile, eventFiles)
+				channelType := ev.ChannelType
+				if channelType == "" {
+					channelType = orbycontext.ChannelTypeFromID(ev.Channel)
+				}
+				go c.handleUserPrompt(ev.Text, ev.Channel, channelType, parentTS, ev.TimeStamp, profile, eventFiles)
 			}
 
 		default:
@@ -401,7 +414,8 @@ func (c *Client) getContextFromHistory(channelID string, threadTS string) string
 
 // handleUserPrompt sends the user's text to the configured LLM provider.
 // eventFiles contains files attached to the triggering message (from MessageEvent).
-func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timestamp string, profile *UserProfile, eventFiles []slackevents.File) {
+// channelType is Slack's conversation type (channel, group, im, mpim).
+func (c *Client) handleUserPrompt(userPrompt, channelID, channelType, threadTS string, timestamp string, profile *UserProfile, eventFiles []slackevents.File) {
 	c.logger.DebugKV("Routing prompt via configured provider", "provider", c.cfg.LLM.Provider)
 	c.logger.DebugKV("User prompt", "text", userPrompt)
 
@@ -446,6 +460,13 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		"use_agent":    fmt.Sprintf("%t", c.cfg.LLM.UseAgent),
 	})
 	defer span.End()
+
+	// Ask the Orby server what this conversation may do before anything reaches
+	// the model. The returned ctx carries the answer to every tool call.
+	ctx, scope, proceed := c.resolveConversationScope(ctx, channelID, channelType, threadTS, profile.UserID)
+	if !proceed {
+		return
+	}
 
 	// Fetch thread replies from slack
 	replies, err := c.userFrontend.GetThreadReplies(channelID, threadTS)
@@ -496,7 +517,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 	if !c.cfg.LLM.UseAgent {
 		// Prepare the final prompt with custom prompt as system instruction
 		var finalPrompt string
-		customPrompt := c.cfg.LLM.CustomPrompt
+		customPrompt := c.cfg.LLM.CustomPrompt + customerPromptLine(scope)
 		if customPrompt != "" {
 			// Use custom prompt as system instruction, then add user prompt
 			finalPrompt = fmt.Sprintf("System instructions: %s\n\nUser: %s", customPrompt, userPrompt)
@@ -513,7 +534,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		startTime := time.Now()
 
 		// Call LLM using the integrated logic with system instruction
-		llmResponse, err := c.llmMCPBridge.CallLLM(finalPrompt, contextHistory)
+		llmResponse, err := c.llmMCPBridge.CallLLM(llmCtx, finalPrompt, contextHistory)
 
 		duration := time.Since(startTime)
 
@@ -555,7 +576,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			"provider": c.cfg.LLM.Provider,
 			"is_agent": "true",
 		})
-		
+
 		c.logger.InfoKV("=== AGENT PATH STARTED ===",
 			"channel", channelID,
 			"thread", threadTS,
@@ -565,7 +586,7 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			"tools_count", len(c.discoveredTools),
 			"max_iterations", c.cfg.LLM.MaxAgentIterations,
 		)
-		
+
 		sendMsg := func(msg string) {
 			// Trace each messages sent by the agent
 			_, msgSpan := c.tracingHandler.StartSpan(agentCtx, "agent-message-send", "event", msg, map[string]string{
@@ -597,16 +618,16 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 		if userDisplayName == "" {
 			userDisplayName = profile.UserID // Ultimate fallback
 		}
-		
+
 		// Construct Slack thread URL
 		slackThreadURL := c.userFrontend.GetThreadURL(channelID, threadTS)
-		
+
 		// Augment system prompt with Slack context
-		systemPrompt := c.cfg.LLM.CustomPrompt + screenshotPromptGuidance
+		systemPrompt := c.cfg.LLM.CustomPrompt + screenshotPromptGuidance + customerPromptLine(scope)
 		if slackThreadURL != "" {
 			systemPrompt = systemPrompt + fmt.Sprintf("\n\nSLACK CONTEXT:\n- This conversation is happening in Slack thread: %s\n- ⚠️ CRITICAL: When creating bugs or features, ALWAYS include slack_link=\"%s\" in the tool call parameters. This links the Notion entry back to the original Slack discussion.", slackThreadURL, slackThreadURL)
 		}
-		
+
 		c.logger.InfoKV("Calling LLM agent bridge",
 			"provider", c.cfg.LLM.Provider,
 			"user_display_name", userDisplayName,
@@ -614,13 +635,14 @@ func (c *Client) handleUserPrompt(userPrompt, channelID, threadTS string, timest
 			"context_history_length", len(contextHistory),
 		)
 		llmResponse, err := c.llmMCPBridge.CallLLMAgent(
+			agentCtx,
 			userDisplayName,
 			systemPrompt,
 			userPrompt,
 			contextHistory,
 			&agentCallbackHandler{
-				SimpleHandler: callbacks.SimpleHandler{},
-				sendMessage:   sendMsg,
+				SimpleHandler:  callbacks.SimpleHandler{},
+				sendMessage:    sendMsg,
 				iterationCount: 0,
 			})
 		duration := time.Since(startTime)
@@ -930,7 +952,8 @@ func (c *Client) processLLMResponseAndReply(traceCtx context.Context, llmRespons
 		var repromptErr error
 		// Prepare the re-prompt with custom prompt as system instruction
 		var finalRePrompt string
-		customPrompt := c.cfg.LLM.CustomPrompt
+		scope, _ := orbycontext.FromContext(ctx)
+		customPrompt := c.cfg.LLM.CustomPrompt + customerPromptLine(scope)
 
 		if customPrompt != "" {
 			// Use custom prompt as system instruction for re-prompt too
@@ -940,7 +963,7 @@ func (c *Client) processLLMResponseAndReply(traceCtx context.Context, llmRespons
 		}
 		startTime := time.Now()
 
-		finalResStruct, repromptErr := c.llmMCPBridge.CallLLM(finalRePrompt, c.getContextFromHistory(channelID, threadTS))
+		finalResStruct, repromptErr := c.llmMCPBridge.CallLLM(ctx, finalRePrompt, c.getContextFromHistory(channelID, threadTS))
 
 		duration := time.Since(startTime)
 		// Set duration

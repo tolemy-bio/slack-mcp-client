@@ -12,6 +12,7 @@ import (
 
 	customErrors "github.com/tolemy-bio/slack-mcp-client/internal/common/errors"
 	"github.com/tolemy-bio/slack-mcp-client/internal/common/logging"
+	"github.com/tolemy-bio/slack-mcp-client/internal/orbycontext"
 	"github.com/tolemy-bio/slack-mcp-client/internal/slack/formatter"
 )
 
@@ -25,6 +26,10 @@ type UserFrontend interface {
 	SendMessage(channelID, threadTS, text string)
 	GetThreadReplies(channelID, threadTS string) ([]slack.Message, error)
 	GetUserInfo(userID string) (*UserProfile, error)
+	// GetUserFacts returns the user's team and guest flags (Slack users.info).
+	GetUserFacts(userID string) (*orbycontext.UserFacts, error)
+	// GetHomeTeamID returns the bot's own workspace (auth.test team_id).
+	GetHomeTeamID() string
 	GetThreadURL(channelID, threadTS string) string
 	GetBotToken() string
 }
@@ -88,6 +93,9 @@ func GetSlackClient(botToken, appToken string, stdLogger *logging.Logger, thinki
 		logger:          slackLogger,
 		thinkingMessage: thinkingMessage,
 		userCache:       make(map[string]*UserProfile),
+		userFacts: newUserFactsCache(func(userID string) (*slack.User, error) {
+			return api.GetUserInfoContext(context.Background(), userID)
+		}),
 	}, nil
 }
 
@@ -110,6 +118,7 @@ type SlackClient struct {
 	logger          *logging.Logger
 	thinkingMessage string
 	userCache       map[string]*UserProfile
+	userFacts       *userFactsCache
 }
 
 func (slackClient *SlackClient) GetEventChannel() chan socketmode.Event {
@@ -170,6 +179,16 @@ func (slackClient *SlackClient) GetUserInfo(userID string) (*UserProfile, error)
 	}
 	slackClient.userCache[userID] = profile
 	return profile, nil
+}
+
+// GetUserFacts returns the user's team and guest flags from users.info, cached briefly.
+func (slackClient *SlackClient) GetUserFacts(userID string) (*orbycontext.UserFacts, error) {
+	return slackClient.userFacts.get(userID)
+}
+
+// GetHomeTeamID returns the bot's own workspace ID (from auth.test).
+func (slackClient *SlackClient) GetHomeTeamID() string {
+	return slackClient.teamID
 }
 
 // SendMessage sends a message back to Slack, replying in a thread if threadTS is provided.
