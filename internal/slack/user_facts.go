@@ -18,7 +18,8 @@ type userFactsEntry struct {
 	expires time.Time
 }
 
-// userFactsCache answers "which team is this user in, and are they a guest?"
+// userFactsCache answers "which team is this user in, are they a guest, and
+// what are they called?"
 // from Slack's users.info (bot scope users:read), caching answers for a short
 // time. Failed lookups are not cached, so the next message tries again.
 type userFactsCache struct {
@@ -62,9 +63,23 @@ func (c *userFactsCache) get(userID string) (*orbycontext.UserFacts, error) {
 		IsRestricted:      user.IsRestricted,
 		IsUltraRestricted: user.IsUltraRestricted,
 		IsStranger:        user.IsStranger,
+		Name:              userName(user),
+		AvatarURL:         user.Profile.Image72,
 	}
 	c.mu.Lock()
 	c.entries[userID] = userFactsEntry{facts: facts, expires: c.now().Add(c.ttl)}
 	c.mu.Unlock()
 	return &facts, nil
+}
+
+// userName is the name a person reads in Slack: the profile's real name, then
+// the display name they chose, then the account handle. users:read is enough
+// for all three; email would need another scope, so it is not used.
+func userName(user *slack.User) string {
+	for _, name := range []string{user.Profile.RealName, user.Profile.DisplayName, user.Name} {
+		if name != "" {
+			return name
+		}
+	}
+	return ""
 }

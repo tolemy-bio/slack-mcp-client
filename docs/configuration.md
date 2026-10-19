@@ -412,8 +412,10 @@ issues. It is **off by default**; with it off, nothing below happens.
 When enabled, for every message:
 
 1. The client builds the identity facts from Slack: channel ID and type, user ID, the user's team and guest
-   flags from `users.info` (cached 10 minutes), and the bot's own workspace (`auth.test`). If `users.info`
-   fails, the user's team is sent empty so the server does not treat them as staff.
+   flags from `users.info` (cached 10 minutes), the user's name and avatar from the same call
+   (`user_name`: profile real name, else display name, else handle; `user_avatar_url`: `profile.image_72`),
+   and the bot's own workspace (`auth.test`). If `users.info` fails, the user's team is sent empty so the
+   server does not treat them as staff, and the name and avatar are sent empty.
 2. It POSTs the facts to the context endpoint. The answer's `mode` decides:
    - `blocked`: the server's `message` is posted in the thread and the model is not called.
    - `customer`: the model only sees the tools in `allowed_tools` (across all MCP servers) and is told
