@@ -26,7 +26,7 @@ type UserFrontend interface {
 	SendMessage(channelID, threadTS, text string)
 	GetThreadReplies(channelID, threadTS string) ([]slack.Message, error)
 	GetUserInfo(userID string) (*UserProfile, error)
-	// GetUserFacts returns the user's team and guest flags (Slack users.info).
+	// GetUserFacts returns the user's team, guest flags, name and avatar (Slack users.info).
 	GetUserFacts(userID string) (*orbycontext.UserFacts, error)
 	// GetHomeTeamID returns the bot's own workspace (auth.test team_id).
 	GetHomeTeamID() string
@@ -181,7 +181,7 @@ func (slackClient *SlackClient) GetUserInfo(userID string) (*UserProfile, error)
 	return profile, nil
 }
 
-// GetUserFacts returns the user's team and guest flags from users.info, cached briefly.
+// GetUserFacts returns the user's team, guest flags, name and avatar from users.info, cached briefly.
 func (slackClient *SlackClient) GetUserFacts(userID string) (*orbycontext.UserFacts, error) {
 	return slackClient.userFacts.get(userID)
 }
