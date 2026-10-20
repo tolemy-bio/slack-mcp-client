@@ -75,6 +75,11 @@ resource "google_compute_instance" "slack_client" {
     xero-client-id    = var.xero_client_id
     xero-redirect-uri = var.xero_redirect_uri
     
+    # Linear OAuth app: Orby files issues as itself on behalf of the Slack user (TOL-830).
+    # Both or neither; the server refuses to start with only one.
+    linear-orby-client-id     = var.linear_orby_client_id
+    linear-orby-client-secret = var.linear_orby_client_secret
+    
     # Orbit AWS credentials (for Orbit MCP - read-only DynamoDB + S3)
     orbit-aws-region            = var.orbit_aws_region
     orbit-aws-access-key-id     = var.orbit_aws_access_key_id
