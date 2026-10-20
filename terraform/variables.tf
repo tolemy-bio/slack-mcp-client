@@ -124,6 +124,21 @@ variable "xero_redirect_uri" {
   default     = "http://localhost:8080/xero/callback"
 }
 
+# Linear OAuth app (TOL-830)
+variable "linear_orby_client_id" {
+  description = "Client ID of the Orby OAuth app in Linear"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "linear_orby_client_secret" {
+  description = "Client secret of the Orby OAuth app in Linear"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "slack_signing_secret" {
   description = "Slack Signing Secret (for MCP server)"
   type        = string

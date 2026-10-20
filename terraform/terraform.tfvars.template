@@ -21,6 +21,10 @@ litellm_model    = "claude-3-5-haiku-20241022"
 # Notion credentials (for MCP server)
 notion_api_key = "secret_your-notion-api-key"
 
+# Linear OAuth app: Settings -> API -> OAuth applications -> Orby. Both or neither.
+# linear_orby_client_id     = ""
+# linear_orby_client_secret = ""
+
 # MCP Server (now co-located on localhost)
 # mcp_server_url = "http://localhost:8080/rpc"  # (default, no need to set)
 # mcp_auth_token = ""  # (not needed for localhost)
