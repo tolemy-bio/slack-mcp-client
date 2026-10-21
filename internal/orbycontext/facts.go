@@ -16,6 +16,10 @@ const ArgumentName = "_orby_context"
 
 // Facts identifies one Slack message: the conversation it was posted in and the
 // person who posted it. The JSON shape is the contract with the Orby server.
+// user_name and user_avatar_url (TOL-830) let the server record who reported a
+// ticket from Slack rather than from a name the model wrote; they are always
+// sent, empty when users.info failed, and the server treats them as optional.
+// Neither decides access: that stays with the team and guest flags.
 type Facts struct {
 	ChannelID             string `json:"channel_id"`
 	ChannelType           string `json:"channel_type"`
@@ -25,19 +29,25 @@ type Facts struct {
 	UserIsRestricted      bool   `json:"user_is_restricted"`
 	UserIsUltraRestricted bool   `json:"user_is_ultra_restricted"`
 	UserIsStranger        bool   `json:"user_is_stranger"`
+	UserName              string `json:"user_name"`
+	UserAvatarURL         string `json:"user_avatar_url"`
 }
 
-// UserFacts is what Slack's users.info says about a user's membership.
+// UserFacts is what Slack's users.info says about a user's membership, and
+// who they are.
 type UserFacts struct {
 	TeamID            string
 	IsRestricted      bool // multi-channel guest
 	IsUltraRestricted bool // single-channel guest
 	IsStranger        bool // user from another workspace (Slack Connect)
+	Name              string
+	AvatarURL         string
 }
 
 // BuildFacts assembles the facts for one message. When the user lookup failed,
 // the user's team is left empty: the server's staff rule (same team as the
-// bot's workspace) then fails closed instead of the client guessing "staff".
+// bot's workspace) then fails closed instead of the client guessing "staff",
+// and the name and avatar stay empty rather than being guessed.
 func BuildFacts(channelID, channelType, userID, homeTeamID string, user *UserFacts, lookupErr error) Facts {
 	facts := Facts{
 		ChannelID:   channelID,
@@ -52,6 +62,8 @@ func BuildFacts(channelID, channelType, userID, homeTeamID string, user *UserFac
 	facts.UserIsRestricted = user.IsRestricted
 	facts.UserIsUltraRestricted = user.IsUltraRestricted
 	facts.UserIsStranger = user.IsStranger
+	facts.UserName = user.Name
+	facts.UserAvatarURL = user.AvatarURL
 	return facts
 }
 
@@ -82,5 +94,7 @@ func (f Facts) AsArgument() map[string]interface{} {
 		"user_is_restricted":       f.UserIsRestricted,
 		"user_is_ultra_restricted": f.UserIsUltraRestricted,
 		"user_is_stranger":         f.UserIsStranger,
+		"user_name":                f.UserName,
+		"user_avatar_url":          f.UserAvatarURL,
 	}
 }

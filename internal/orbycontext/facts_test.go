@@ -35,13 +35,19 @@ func TestBuildFacts(t *testing.T) {
 				UserIsRestricted: true, UserIsUltraRestricted: true},
 		},
 		{
+			name: "name and avatar are carried through",
+			user: &UserFacts{TeamID: home, Name: "Ada Lovelace", AvatarURL: "https://avatars.slack-edge.com/ada_72.png"},
+			want: Facts{ChannelID: "C1", ChannelType: "channel", UserID: "U1", UserTeamID: home, HomeTeamID: home,
+				UserName: "Ada Lovelace", UserAvatarURL: "https://avatars.slack-edge.com/ada_72.png"},
+		},
+		{
 			name: "stranger from another workspace",
 			user: &UserFacts{TeamID: "T0ANOMER", IsStranger: true},
 			want: Facts{ChannelID: "C1", ChannelType: "channel", UserID: "U1", UserTeamID: "T0ANOMER", HomeTeamID: home, UserIsStranger: true},
 		},
 		{
-			name:      "users.info failed: no team, so not staff",
-			user:      &UserFacts{TeamID: home},
+			name:      "users.info failed: no team, so not staff, and no name or avatar",
+			user:      &UserFacts{TeamID: home, Name: "Ada Lovelace", AvatarURL: "https://avatars.slack-edge.com/ada_72.png"},
 			lookupErr: errors.New("ratelimited"),
 			want:      Facts{ChannelID: "C1", ChannelType: "channel", UserID: "U1", UserTeamID: "", HomeTeamID: home},
 		},
@@ -59,17 +65,28 @@ func TestBuildFacts(t *testing.T) {
 }
 
 func TestFactsJSONMatchesContract(t *testing.T) {
-	facts := Facts{ChannelID: "C0123", ChannelType: "channel", UserID: "U0123", UserTeamID: "T0123", HomeTeamID: "T0999"}
+	facts := Facts{ChannelID: "C0123", ChannelType: "channel", UserID: "U0123", UserTeamID: "T0123", HomeTeamID: "T0999",
+		UserName: "Ada Lovelace", UserAvatarURL: "https://avatars.slack-edge.com/ada_72.png"}
 	raw, err := json.Marshal(facts)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"channel_id":"C0123","channel_type":"channel","user_id":"U0123",
 		"user_team_id":"T0123","home_team_id":"T0999","user_is_restricted":false,
-		"user_is_ultra_restricted":false,"user_is_stranger":false}`, string(raw))
+		"user_is_ultra_restricted":false,"user_is_stranger":false,
+		"user_name":"Ada Lovelace","user_avatar_url":"https://avatars.slack-edge.com/ada_72.png"}`, string(raw))
 
 	// The tool argument has exactly the same shape as the endpoint body.
 	var asMap map[string]interface{}
 	require.NoError(t, json.Unmarshal(raw, &asMap))
 	assert.Equal(t, asMap, facts.AsArgument())
+}
+
+func TestFactsJSONAlwaysCarriesNameAndAvatar(t *testing.T) {
+	raw, err := json.Marshal(BuildFacts("C1", "channel", "U1", home, nil, errors.New("ratelimited")))
+	require.NoError(t, err)
+	var sent map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &sent))
+	assert.Equal(t, "", sent["user_name"])
+	assert.Equal(t, "", sent["user_avatar_url"])
 }
 
 func TestChannelTypeFromID(t *testing.T) {

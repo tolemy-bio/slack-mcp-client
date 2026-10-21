@@ -56,7 +56,7 @@ func newScopeTestClient(enabled bool, fe *fakeFrontend, res *fakeResolver) *Clie
 
 func guestFrontend() *fakeFrontend {
 	return &fakeFrontend{users: map[string]*orbycontext.UserFacts{
-		"U0GUEST": {TeamID: "T0ANOMER", IsStranger: true},
+		"U0GUEST": {TeamID: "T0ANOMER", IsStranger: true, Name: "Grace Guest", AvatarURL: "https://avatars.slack-edge.com/grace_72.png"},
 		"U0STAFF": {TeamID: "T0TOLEMY"},
 	}}
 }
@@ -92,6 +92,7 @@ func TestResolveScope_Customer(t *testing.T) {
 	assert.Equal(t, orbycontext.Facts{
 		ChannelID: "C0ANOMER", ChannelType: "channel", UserID: "U0GUEST",
 		UserTeamID: "T0ANOMER", HomeTeamID: "T0TOLEMY", UserIsStranger: true,
+		UserName: "Grace Guest", UserAvatarURL: "https://avatars.slack-edge.com/grace_72.png",
 	}, res.calls[0])
 	fromCtx, has := orbycontext.FromContext(ctx)
 	require.True(t, has)
@@ -170,6 +171,8 @@ func TestResolveScope_UsersInfoFailureSendsNoTeam(t *testing.T) {
 	require.Len(t, res.calls, 1)
 	assert.Equal(t, "", res.calls[0].UserTeamID, "never guess staff")
 	assert.Equal(t, "T0TOLEMY", res.calls[0].HomeTeamID)
+	assert.Equal(t, "", res.calls[0].UserName, "no name guessed")
+	assert.Equal(t, "", res.calls[0].UserAvatarURL)
 }
 
 func TestNewClient_EnabledWithoutResolverFails(t *testing.T) {

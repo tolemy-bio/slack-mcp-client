@@ -35,6 +35,7 @@ DISABLE_RAG=$(meta disable-rag)
 ORBIT_AWS_REGION=$(meta orbit-aws-region)
 LINEAR_TEAM_ID=$(meta linear-team-id)
 GITHUB_APP_ID=$(meta github-app-id)
+STOCK_ORDERS_SHEET_ID=$(meta stock-orders-sheet-id)
 NEWSWATCH_GCS_BACKUP_BUCKET=$(meta newswatch-gcs-backup-bucket)
 NEWSWATCH_ALLOWED_DOMAINS=$(meta newswatch-allowed-domains)
 NEWSWATCH_GOOGLE_CLIENT_ID=$(meta newswatch-google-client-id)
@@ -64,6 +65,9 @@ NEWSWATCH_GOOGLE_CLIENT_SECRET=$(optional_secret newswatch-google-client-secret)
 GITHUB_APP_PRIVATE_KEY=$(optional_secret github-app-private-key)
 BRAVE_API_KEY=$(optional_secret brave-api-key)
 CONSENSUS_API_KEY=$(optional_secret consensus-api-key)
+LINEAR_ORBY_CLIENT_ID=$(optional_secret linear-orby-client-id)
+LINEAR_ORBY_CLIENT_SECRET=$(optional_secret linear-orby-client-secret)
+GOOGLE_SHEETS_CREDENTIALS_JSON=$(optional_secret google-sheets-credentials-json)
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -313,6 +317,10 @@ LINEAR_TEAM_ID=${LINEAR_TEAM_ID}
 LINEAR_POLICY_GITHUB_TOKEN=${LINEAR_POLICY_GITHUB_TOKEN}
 GITHUB_APP_ID=${GITHUB_APP_ID}
 GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+LINEAR_ORBY_CLIENT_ID=${LINEAR_ORBY_CLIENT_ID}
+LINEAR_ORBY_CLIENT_SECRET=${LINEAR_ORBY_CLIENT_SECRET}
+STOCK_ORDERS_SHEET_ID=${STOCK_ORDERS_SHEET_ID}
+GOOGLE_SHEETS_CREDENTIALS_JSON=${GOOGLE_SHEETS_CREDENTIALS_JSON}
 NEWSWATCH_DB_PATH=/tmp/newswatch/newswatch.db
 NEWSWATCH_GCS_BACKUP_BUCKET=${NEWSWATCH_GCS_BACKUP_BUCKET}
 NEWSWATCH_SESSION_SECRET=${NEWSWATCH_SESSION_SECRET}

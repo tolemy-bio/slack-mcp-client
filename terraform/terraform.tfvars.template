@@ -16,6 +16,9 @@ machine_type = "e2-micro"
 litellm_base_url = "https://litellm.tolemy.bio/v1"
 # litellm_model  = "claude-sonnet-4-5"  # (default)
 
+# Stock orders (TOL-847): the id from docs.google.com/spreadsheets/d/<ID>/edit
+# stock_orders_sheet_id = "<ID>"
+
 # NewsWatch admin sign-in
 # newswatch_google_client_id = "<client id>.apps.googleusercontent.com"
 

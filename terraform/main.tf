@@ -46,6 +46,11 @@ locals {
     "github-app-private-key",
     "brave-api-key",
     "consensus-api-key",
+    # Linear OAuth app (TOL-830): set both or neither; the server refuses to start with one.
+    "linear-orby-client-id",
+    "linear-orby-client-secret",
+    # base64 of a service-account key for the stock orders sheet (TOL-847)
+    "google-sheets-credentials-json",
   ])
 }
 
@@ -110,6 +115,8 @@ resource "google_compute_instance" "slack_client" {
     orbit-aws-region = var.orbit_aws_region
     linear-team-id   = var.linear_team_id
     github-app-id    = var.github_app_id
+
+    stock-orders-sheet-id = var.stock_orders_sheet_id
 
     newswatch-gcs-backup-bucket = var.newswatch_gcs_backup_bucket
     newswatch-allowed-domains   = var.newswatch_allowed_domains

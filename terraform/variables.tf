@@ -130,6 +130,13 @@ variable "github_app_id" {
   default     = "5296072"
 }
 
+# Stock orders (TOL-847; the Sheets credentials are in Secret Manager)
+variable "stock_orders_sheet_id" {
+  description = "Google Sheet the stock orders are logged in; empty switches the stock tools off"
+  type        = string
+  default     = ""
+}
+
 # NewsWatch (the session secret and the OAuth client secret are in Secret Manager)
 variable "newswatch_gcs_backup_bucket" {
   description = "Bucket NewsWatch backs its database up to"

@@ -14,13 +14,44 @@ import (
 
 func TestUserFactsCache_MapsUsersInfo(t *testing.T) {
 	cache := newUserFactsCache(func(string) (*slack.User, error) {
-		return &slack.User{ID: "U1", TeamID: "T0ANOMER", IsRestricted: true, IsUltraRestricted: true, IsStranger: true}, nil
+		return &slack.User{ID: "U1", Name: "ada", TeamID: "T0ANOMER", IsRestricted: true, IsUltraRestricted: true, IsStranger: true,
+			Profile: slack.UserProfile{RealName: "Ada Lovelace", DisplayName: "ada.l", Image72: "https://avatars.slack-edge.com/ada_72.png"}}, nil
 	})
 
 	got, err := cache.get("U1")
 
 	require.NoError(t, err)
-	assert.Equal(t, orbycontext.UserFacts{TeamID: "T0ANOMER", IsRestricted: true, IsUltraRestricted: true, IsStranger: true}, *got)
+	assert.Equal(t, orbycontext.UserFacts{TeamID: "T0ANOMER", IsRestricted: true, IsUltraRestricted: true, IsStranger: true,
+		Name: "Ada Lovelace", AvatarURL: "https://avatars.slack-edge.com/ada_72.png"}, *got)
+}
+
+func TestUserName_FallsBackFromRealToDisplayToHandle(t *testing.T) {
+	cases := map[string]struct {
+		user slack.User
+		want string
+	}{
+		"real name":            {slack.User{Name: "ada", Profile: slack.UserProfile{RealName: "Ada Lovelace", DisplayName: "ada.l"}}, "Ada Lovelace"},
+		"display name":         {slack.User{Name: "ada", Profile: slack.UserProfile{DisplayName: "ada.l"}}, "ada.l"},
+		"handle":               {slack.User{Name: "ada"}, "ada"},
+		"nothing: empty, sent": {slack.User{}, ""},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			user := tc.user
+			assert.Equal(t, tc.want, userName(&user))
+		})
+	}
+}
+
+func TestUserFactsCache_NoAvatarIsEmpty(t *testing.T) {
+	cache := newUserFactsCache(func(string) (*slack.User, error) {
+		return &slack.User{TeamID: "T0TOLEMY", Profile: slack.UserProfile{RealName: "Ada Lovelace"}}, nil
+	})
+
+	got, err := cache.get("U1")
+
+	require.NoError(t, err)
+	assert.Equal(t, "", got.AvatarURL)
 }
 
 func TestUserFactsCache_CachesForTTL(t *testing.T) {
