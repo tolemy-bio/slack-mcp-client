@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tmc/langchaingo/callbacks"
+	"github.com/tmc/langchaingo/httputil"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 	customErrors "github.com/tolemy-bio/slack-mcp-client/internal/common/errors"
@@ -67,6 +68,11 @@ func (f *OpenAIModelFactory) Create(config map[string]interface{}, logger *loggi
 
 	if apiKey != "" {
 		opts = append(opts, openai.WithToken(apiKey))
+	}
+
+	if promptCaching, _ := config["prompt_caching"].(bool); promptCaching {
+		opts = append(opts, openai.WithHTTPClient(newPromptCachingDoer(httputil.DefaultClient)))
+		logger.InfoKV("Prompt caching on: sending LiteLLM cache_control_injection_points", "model", modelName)
 	}
 
 	if baseURL != "" {
