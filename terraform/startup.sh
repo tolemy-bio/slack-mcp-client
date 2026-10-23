@@ -95,6 +95,7 @@ cat > /etc/orby/slack-client-config.json << EOF
         "visionModel": "${VISION_MODEL}",
         "apiKey": "${LITELLM_API_KEY}",
         "baseUrl": "${LITELLM_BASE_URL}",
+        "promptCaching": true,
         "temperature": 0.1,
         "maxTokens": 4096
       }

@@ -52,6 +52,7 @@ func NewProviderRegistry(cfg *config.Config, logger *logging.Logger) (*ProviderR
 			"base_url":    providerConfig.BaseURL,
 			"temperature": providerConfig.Temperature,
 			"max_tokens":  providerConfig.MaxTokens,
+			"prompt_caching": providerConfig.PromptCaching,
 		}
 		providerInstance, err := langchainFactory(langchainConfig, logger)
 		if err != nil {
