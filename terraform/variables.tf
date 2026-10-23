@@ -24,26 +24,6 @@ variable "machine_type" {
   default     = "e2-small"  # 2GB RAM for Slack client + MCP server + ChromaDB
 }
 
-# Slack credentials
-variable "slack_bot_token" {
-  description = "Slack Bot Token (xoxb-...)"
-  type        = string
-  sensitive   = true
-}
-
-variable "slack_app_token" {
-  description = "Slack App Token for Socket Mode (xapp-...)"
-  type        = string
-  sensitive   = true
-}
-
-# LLM credentials (LiteLLM)
-variable "litellm_api_key" {
-  description = "LiteLLM API Key"
-  type        = string
-  sensitive   = true
-}
-
 variable "litellm_base_url" {
   description = "LiteLLM Base URL"
   type        = string
@@ -69,36 +49,15 @@ variable "mcp_server_url" {
   default     = "http://127.0.0.1:8081/mcp/orby" # via the local nginx proxy that sets X-Local-Request
 }
 
-variable "mcp_auth_token" {
-  description = "MCP server authentication token (deprecated - not needed for localhost)"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "custom_prompt" {
   description = "Custom system prompt for the Slack bot (optional)"
   type        = string
   default     = ""
 }
 
-# Notion credentials (for MCP server)
-variable "notion_api_key" {
-  description = "Notion API Key"
-  type        = string
-  sensitive   = true
-}
-
-# Langfuse credentials (for MCP server)
+# Langfuse (the secret key is in Secret Manager)
 variable "langfuse_public_key" {
   description = "Langfuse Public API Key"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "langfuse_secret_key" {
-  description = "Langfuse Secret API Key"
   type        = string
   sensitive   = true
   default     = ""
@@ -124,46 +83,11 @@ variable "xero_redirect_uri" {
   default     = "http://localhost:8080/xero/callback"
 }
 
-# Linear OAuth app (TOL-830)
-variable "linear_orby_client_id" {
-  description = "Client ID of the Orby OAuth app in Linear"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "linear_orby_client_secret" {
-  description = "Client secret of the Orby OAuth app in Linear"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "slack_signing_secret" {
-  description = "Slack Signing Secret (for MCP server)"
-  type        = string
-  sensitive   = true
-}
-
-# Orbit AWS credentials (for Orbit MCP - read-only DynamoDB + S3 access)
+# Orbit AWS region (the access keys are in Secret Manager)
 variable "orbit_aws_region" {
   description = "AWS region for Orbit DynamoDB/S3"
   type        = string
   default     = "eu-west-2"
-}
-
-variable "orbit_aws_access_key_id" {
-  description = "AWS access key for Orbit data access"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "orbit_aws_secret_access_key" {
-  description = "AWS secret key for Orbit data access"
-  type        = string
-  sensitive   = true
-  default     = ""
 }
 
 # RAG configuration
@@ -190,4 +114,44 @@ variable "admin_email" {
   description = "Admin email for Let's Encrypt notifications"
   type        = string
   default     = "caelan@tolemy.bio"
+}
+
+# Linear
+variable "linear_team_id" {
+  description = "Linear team key that Orby files issues into"
+  type        = string
+  default     = "TOL"
+}
+
+# GitHub App Orby uses to start the coding agent (the private key is in Secret Manager)
+variable "github_app_id" {
+  description = "App ID of the Orby GitHub App; empty switches the start_agent_pr tool off"
+  type        = string
+  default     = "5296072"
+}
+
+# Stock orders (TOL-847; the Sheets credentials are in Secret Manager)
+variable "stock_orders_sheet_id" {
+  description = "Google Sheet the stock orders are logged in; empty switches the stock tools off"
+  type        = string
+  default     = ""
+}
+
+# NewsWatch (the session secret and the OAuth client secret are in Secret Manager)
+variable "newswatch_gcs_backup_bucket" {
+  description = "Bucket NewsWatch backs its database up to"
+  type        = string
+  default     = "orby-newswatch-backups"
+}
+
+variable "newswatch_allowed_domains" {
+  description = "Comma-separated email domains allowed into the NewsWatch admin UI"
+  type        = string
+  default     = "tolemy.bio"
+}
+
+variable "newswatch_google_client_id" {
+  description = "Google OAuth client ID for the NewsWatch admin UI"
+  type        = string
+  default     = ""
 }

@@ -16,51 +16,9 @@ if ! command -v terraform &> /dev/null; then
     exit 1
 fi
 
-# Check for required env vars or terraform.tfvars
-if [ ! -f "${TERRAFORM_DIR}/terraform.tfvars" ]; then
-    echo "📝 No terraform.tfvars found. Checking environment variables..."
-    
-    # Check required vars
-    MISSING_VARS=()
-    [ -z "$SLACK_BOT_TOKEN" ] && MISSING_VARS+=("SLACK_BOT_TOKEN")
-    [ -z "$SLACK_APP_TOKEN" ] && MISSING_VARS+=("SLACK_APP_TOKEN")
-    [ -z "$SLACK_SIGNING_SECRET" ] && MISSING_VARS+=("SLACK_SIGNING_SECRET")
-    [ -z "$NOTION_API_KEY" ] && MISSING_VARS+=("NOTION_API_KEY")
-    [ -z "$LITELLM_API_KEY" ] && MISSING_VARS+=("LITELLM_API_KEY")
-    
-    if [ ${#MISSING_VARS[@]} -gt 0 ]; then
-        echo "❌ Missing required environment variables: ${MISSING_VARS[*]}"
-        echo ""
-        echo "Either:"
-        echo "  1. Set environment variables and re-run"
-        echo "  2. Copy terraform.tfvars.template to terraform.tfvars and fill in values"
-        exit 1
-    fi
-    
-    # Create tfvars from environment
-    echo "Creating terraform.tfvars from environment..."
-    cat > "${TERRAFORM_DIR}/terraform.tfvars" << EOF
-project_id = "${GCP_PROJECT_ID:-gen-lang-client-0335698828}"
-region     = "europe-west1"
-zone       = "europe-west1-b"
-
-machine_type = "e2-small"
-
-slack_bot_token      = "${SLACK_BOT_TOKEN}"
-slack_app_token      = "${SLACK_APP_TOKEN}"
-slack_signing_secret = "${SLACK_SIGNING_SECRET}"
-
-notion_api_key = "${NOTION_API_KEY}"
-
-litellm_api_key  = "${LITELLM_API_KEY}"
-litellm_base_url = "${LITELLM_BASE_URL:-https://litellm.tolemy.bio/v1}"
-litellm_model    = "${LITELLM_MODEL:-claude-sonnet-4-5}"
-
-mcp_server_url = "${MCP_SERVER_URL:-http://localhost:8080/rpc}"
-mcp_auth_token = "${MCP_AUTH_TOKEN:-}"
-EOF
-    echo "✅ Created terraform.tfvars"
-fi
+# No secret passes through this script, terraform.tfvars or instance metadata any more.
+# The VM reads its credentials from Secret Manager (orby-<name>, declared in
+# terraform/main.tf); terraform.tfvars is only needed to override plain configuration.
 
 # Build and push MCP server Docker image
 echo ""

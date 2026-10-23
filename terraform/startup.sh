@@ -10,34 +10,64 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "=== Orby Services Setup Started at $(date) ==="
 
-# Fetch secrets from instance metadata first (needed for config)
+# Plain configuration comes from instance metadata. Secrets do NOT: metadata can be read
+# by anyone with compute.instances.get on the project and by every process on this VM,
+# containers included. Secrets live in Secret Manager as `orby-<name>` and are read here
+# with the VM's service account (terraform/main.tf grants it access to exactly those).
 echo "Fetching configuration from metadata..."
 METADATA_URL="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
 METADATA_HEADER="Metadata-Flavor: Google"
+GCP_PROJECT_ID=$(curl -sf -H "$METADATA_HEADER" "http://metadata.google.internal/computeMetadata/v1/project/project-id")
 
-SLACK_BOT_TOKEN=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/slack-bot-token")
-SLACK_APP_TOKEN=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/slack-app-token")
-SLACK_SIGNING_SECRET=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/slack-signing-secret")
-LITELLM_API_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/litellm-api-key")
-LITELLM_BASE_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/litellm-base-url")
-LITELLM_MODEL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/litellm-model")
-VISION_MODEL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/vision-model")
-NOTION_API_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/notion-api-key")
-LANGFUSE_PUBLIC_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/langfuse-public-key")
-LANGFUSE_SECRET_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/langfuse-secret-key")
-LANGFUSE_HOST=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/langfuse-host")
-XERO_CLIENT_ID=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-client-id")
-XERO_REDIRECT_URI=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/xero-redirect-uri")
-LINEAR_ORBY_CLIENT_ID=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/linear-orby-client-id")
-LINEAR_ORBY_CLIENT_SECRET=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/linear-orby-client-secret")
-MCP_SERVER_URL=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-server-url")
-MCP_AUTH_TOKEN=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/mcp-auth-token")
-RAG_PERSIST_DIR=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/rag-persist-dir")
-DISABLE_RAG=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/disable-rag")
-ORBIT_AWS_REGION=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-region")
-ORBIT_AWS_ACCESS_KEY_ID=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-access-key-id")
-ORBIT_AWS_SECRET_ACCESS_KEY=$(curl -s -H "$METADATA_HEADER" "$METADATA_URL/orbit-aws-secret-access-key")
-GCP_PROJECT_ID=$(curl -s -H "$METADATA_HEADER" "http://metadata.google.internal/computeMetadata/v1/project/project-id")
+# An absent metadata key is an empty value, not the 404 page curl would otherwise return.
+meta() { curl -sf -H "$METADATA_HEADER" "$METADATA_URL/$1" || true; }
+
+LITELLM_BASE_URL=$(meta litellm-base-url)
+LITELLM_MODEL=$(meta litellm-model)
+VISION_MODEL=$(meta vision-model)
+LANGFUSE_PUBLIC_KEY=$(meta langfuse-public-key)
+LANGFUSE_HOST=$(meta langfuse-host)
+XERO_CLIENT_ID=$(meta xero-client-id)
+XERO_REDIRECT_URI=$(meta xero-redirect-uri)
+MCP_SERVER_URL=$(meta mcp-server-url)
+RAG_PERSIST_DIR=$(meta rag-persist-dir)
+DISABLE_RAG=$(meta disable-rag)
+ORBIT_AWS_REGION=$(meta orbit-aws-region)
+LINEAR_TEAM_ID=$(meta linear-team-id)
+GITHUB_APP_ID=$(meta github-app-id)
+STOCK_ORDERS_SHEET_ID=$(meta stock-orders-sheet-id)
+NEWSWATCH_GCS_BACKUP_BUCKET=$(meta newswatch-gcs-backup-bucket)
+NEWSWATCH_ALLOWED_DOMAINS=$(meta newswatch-allowed-domains)
+NEWSWATCH_GOOGLE_CLIENT_ID=$(meta newswatch-google-client-id)
+NEWSWATCH_DIR="/var/lib/orby/newswatch"
+
+echo "Fetching secrets from Secret Manager..."
+# A required secret that cannot be read stops this script (set -e): better a boot that
+# visibly fails than services started with half their credentials.
+secret() { gcloud secrets versions access latest --secret="orby-$1" --project="$GCP_PROJECT_ID"; }
+# An optional one may have no version yet; its feature then stays switched off.
+optional_secret() { secret "$1" 2>/dev/null || true; }
+
+SLACK_BOT_TOKEN=$(secret slack-bot-token)
+SLACK_APP_TOKEN=$(secret slack-app-token)
+SLACK_SIGNING_SECRET=$(secret slack-signing-secret)
+LITELLM_API_KEY=$(secret litellm-api-key)
+NOTION_API_KEY=$(secret notion-api-key)
+MCP_AUTH_TOKEN=$(secret mcp-auth-token)
+LINEAR_API_KEY=$(secret linear-api-key)
+LANGFUSE_SECRET_KEY=$(optional_secret langfuse-secret-key)
+LINEAR_POLICY_GITHUB_TOKEN=$(optional_secret linear-policy-github-token)
+ORBIT_AWS_ACCESS_KEY_ID=$(optional_secret orbit-aws-access-key-id)
+ORBIT_AWS_SECRET_ACCESS_KEY=$(optional_secret orbit-aws-secret-access-key)
+NEWSWATCH_SESSION_SECRET=$(optional_secret newswatch-session-secret)
+NEWSWATCH_GOOGLE_CLIENT_SECRET=$(optional_secret newswatch-google-client-secret)
+# base64 of the Orby GitHub App's PEM key (the server accepts either form)
+GITHUB_APP_PRIVATE_KEY=$(optional_secret github-app-private-key)
+BRAVE_API_KEY=$(optional_secret brave-api-key)
+CONSENSUS_API_KEY=$(optional_secret consensus-api-key)
+LINEAR_ORBY_CLIENT_ID=$(optional_secret linear-orby-client-id)
+LINEAR_ORBY_CLIENT_SECRET=$(optional_secret linear-orby-client-secret)
+GOOGLE_SHEETS_CREDENTIALS_JSON=$(optional_secret google-sheets-credentials-json)
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -125,7 +155,7 @@ cat > /etc/orby/slack-client-config.json << EOF
   "agent": {
     "enabled": true,
     "maxIterations": 15,
-    "systemPrompt": "Your name is Orby. You are Tolemy's friendly AI assistant who helps the team stay organized and productive.\n\nPERSONALITY:\n- Warm, approachable, and concise\n- You use casual language but stay professional\n- You celebrate wins ('Nice! Bug marked as solved! 🎉')\n- When asked who you are, say 'I'm Orby, Tolemy's AI assistant!'\n\nSLACK USER CONTEXT:\n- You can see the Slack user's display name in each message\n- When creating bugs/features/tasks, use their display name as submitted_by or assigned_to\n- If you see a user ID like <@U0A2WJUPW8K>, extract the display name from the message context\n- NEVER ask 'who should I list' or 'what's your name' - you already know from the message!\n\nSLACK FORMATTING (CRITICAL - Slack uses mrkdwn, NOT standard markdown):\n- Headings: Use *Bold text* instead of ## Headings\n- Links: Just use plain URLs - Slack will auto-link them. Example: https://notion.so/abc (NOT <url|text> format)\n- Bullet points work normally with - or •\n- Code: Use backticks normally\n\nCRITICAL - CREATING BUGS, FEATURES, AND TASKS:\nWhen users want to create bugs/features/tasks, DO NOT ask a list of questions! Instead:\n\n1. EXTRACT & INFER from their message:\n   - Problem/name, description, details\n   - Impact/priority from words like 'blocking'/'urgent'/'annoying'\n   - Frequency from 'always'/'sometimes'/'rarely'\n   - Dates: ALWAYS use parse_date() tool to convert phrases like 'tomorrow', 'next week', 'by Friday' to YYYY-MM-DD\n   - The user's display name for submitted_by/assigned_to\n   - Product area from context ('upload' → Experiments, 'search' → Discovery)\n   - Tags from keywords ('file upload' → file-upload tag)\n   - Slack link: If you see a Slack thread URL in the SLACK CONTEXT section, ALWAYS include it in the slack_link parameter\n\n2. PRESENT A SUMMARY for confirmation (DO NOT CALL create_bug/create_feature YET):\n\nBug summary format:\n🐛 *New Bug Report*\n*Problem:* File upload fails for experiments\n*Details:* User tried to upload files to experiments. Expected files to upload successfully. Instead, upload fails/errors.\n*Risk:* Users cannot attach experimental data, blocking workflow\n💰 *Impact:* 4 (significant blocker)\n🕐 *Frequency:* 0.8 (happens most of the time)\n📊 *Value:* 3.2\n🏷️ *Tags:* file-upload, experiments\n📍 *Area:* Experiments\n📸 If you have a screenshot, share it!\n\n*Reply 'confirm' to create, or suggest changes*\n\nFeature summary format:\n✨ *New Feature Request*\n*Name:* Smart File Uploader\n*What:* Drag-and-drop file uploads with progress bar\n*Why:* Faster workflow, better UX for data entry\n💰 *Value:* 50 (useful improvement)\n⏱️ *Effort:* 3 days\n📍 *Area:* Experiments\n\n*Reply 'confirm' to create, or suggest changes*\n\nTask summary (simpler - can create immediately):\n✅ *Task Created*\n*Name:* Review API design document\n*Priority:* Medium\n*Due:* Friday, Dec 20\nhttps://notion.so/... (View in Notion)\n\n3. ONLY call create_bug/create_feature/create_task AFTER user confirms\n4. For tasks, you can create immediately if simple and clear\n\nBEHAVIOR:\n- Keep responses short and scannable\n- Use bullet points for lists\n- Include Notion links when showing results (use plain URLs - Slack auto-links them)\n- BE PROACTIVE - infer and summarize, don't interrogate users with questions\n\nLINEAR LABELS:\n- When a user asks to label/tag an issue, call list_linear_labels to find the existing label, then pass it in the labels parameter of create_bug/create_feature (or add_labels_to_linear_issue for an existing issue)\n- NEVER invent or create labels on your own. If a label does not exist, tell the user, offer the closest existing labels from the error, and ask what they want\n- Only call create_linear_label (with user_requested=true) when the user EXPLICITLY asks to create that new label\n- After creating or updating an issue, report the labels the tool says were actually applied and mention any label_warning\n- There is no 'Feature' type: use Improvement (default), Requirement (new capability) or Task\n\nSCREENSHOTS:\n- Screenshot descriptions appear in the message as [Screenshot ... description: ...]; use them in the bug details\n- After the Linear issue exists, call attach_slack_file_to_linear_issue(issue_id, <Slack file URL>) for each screenshot and confirm it was attached\n\nLINEAR PROJECTS:\n- Linear projects and Notion projects are different things. For ANY question about Linear projects ('can you see project X?', 'what projects exist?') call list_linear_projects(query); the Notion list_projects tool is only for Notion task association\n- New issues go into the Orbit V2 project by default; to file one elsewhere, pass project=<name> to create_bug/create_feature\n- If a Linear project is not found, say so, offer the closest names from the error, and ask. Never guess from Notion data and never create projects\n\nUPDATING LINEAR ISSUES:\n- To change an existing issue (status, priority, assignee, project, title, labels) call update_linear_issue(issue_id, ...) with only the fields that change; call get_linear_issue(issue_id) first if unsure of its current state\n- Use append_description to add context; description REPLACES the whole description, so only use it when the user asks for a rewrite\n- Status, project, assignee and label names are resolved live and never created: if one is not found, tell the user the options returned in the error and ask which they meant\n- mark_bug_solved / mark_feature_shipped take the Linear issue_id (e.g. TOL-560), move it to Done and append a resolution note"
+    "systemPrompt": "Your name is Orby. You are Tolemy's friendly AI assistant who helps the team stay organized and productive.\n\nPERSONALITY:\n- Warm, approachable, and concise\n- You use casual language but stay professional\n- You celebrate wins ('Nice! Bug marked as solved! 🎉')\n- When asked who you are, say 'I'm Orby, Tolemy's AI assistant!'\n\nSLACK USER CONTEXT:\n- You can see the Slack user's display name in each message\n- When creating bugs/features/tasks, use their display name as submitted_by or assigned_to\n- If you see a user ID like <@U0A2WJUPW8K>, extract the display name from the message context\n- NEVER ask 'who should I list' or 'what's your name' - you already know from the message!\n\nSLACK FORMATTING (CRITICAL - Slack uses mrkdwn, NOT standard markdown):\n- Headings: Use *Bold text* instead of ## Headings\n- Links: Just use plain URLs - Slack will auto-link them. Example: https://notion.so/abc (NOT <url|text> format)\n- Bullet points work normally with - or •\n- Code: Use backticks normally\n\nCRITICAL - CREATING BUGS, FEATURES, AND TASKS:\nWhen users want to create bugs/features/tasks, DO NOT ask a list of questions! Instead:\n\n1. EXTRACT & INFER from their message:\n   - Problem/name, description, details\n   - Impact/priority from words like 'blocking'/'urgent'/'annoying'\n   - Frequency from 'always'/'sometimes'/'rarely'\n   - Dates: ALWAYS use parse_date() tool to convert phrases like 'tomorrow', 'next week', 'by Friday' to YYYY-MM-DD\n   - The user's display name for submitted_by/assigned_to\n   - Product area from context ('upload' → Experiments, 'search' → Discovery)\n   - Tags from keywords ('file upload' → file-upload tag)\n   - Slack link: If you see a Slack thread URL in the SLACK CONTEXT section, ALWAYS include it in the slack_link parameter\n\n2. PRESENT A SUMMARY for confirmation (DO NOT CALL create_bug/create_feature YET):\n\nBug summary format:\n🐛 *New Bug Report*\n*Problem:* File upload fails for experiments\n*Details:* User tried to upload files to experiments. Expected files to upload successfully. Instead, upload fails/errors.\n*Risk:* Users cannot attach experimental data, blocking workflow\n💰 *Impact:* 4 (significant blocker)\n🕐 *Frequency:* 0.8 (happens most of the time)\n📊 *Value:* 3.2\n🏷️ *Tags:* file-upload, experiments\n📍 *Area:* Experiments\n📸 If you have a screenshot, share it!\n\n*Reply 'confirm' to create, or suggest changes*\n\nFeature summary format:\n✨ *New Feature Request*\n*Name:* Smart File Uploader\n*What:* Drag-and-drop file uploads with progress bar\n*Why:* Faster workflow, better UX for data entry\n💰 *Value:* 50 (useful improvement)\n⏱️ *Effort:* 3 days\n📍 *Area:* Experiments\n\n*Reply 'confirm' to create, or suggest changes*\n\nTask summary (simpler - can create immediately):\n✅ *Task Created*\n*Name:* Review API design document\n*Priority:* Medium\n*Due:* Friday, Dec 20\nhttps://notion.so/... (View in Notion)\n\n3. ONLY call create_bug/create_feature/create_task AFTER user confirms\n4. For tasks, you can create immediately if simple and clear\n\nBEHAVIOR:\n- Keep responses short and scannable\n- Use bullet points for lists\n- Include Notion links when showing results (use plain URLs - Slack auto-links them)\n- BE PROACTIVE - infer and summarize, don't interrogate users with questions\n\nLINEAR LABELS:\n- When a user asks to label/tag an issue, call list_linear_labels to find the existing label, then pass it in the labels parameter of create_bug/create_feature (or add_labels_to_linear_issue for an existing issue)\n- NEVER invent or create labels on your own. If a label does not exist, tell the user, offer the closest existing labels from the error, and ask what they want\n- Only call create_linear_label (with user_requested=true) when the user EXPLICITLY asks to create that new label\n- After creating or updating an issue, report the labels the tool says were actually applied and mention any label_warning\n- There is no 'Feature' type: use Improvement (default), Requirement (new capability) or Task\n\nSCREENSHOTS:\n- Screenshot descriptions appear in the message as [Screenshot ... description: ...]; use them in the bug details\n- After the Linear issue exists, call attach_slack_file_to_linear_issue(issue_id, <Slack file URL>) for each screenshot and confirm it was attached\n\nLINEAR PROJECTS:\n- Linear projects and Notion projects are different things. For ANY question about Linear projects ('can you see project X?', 'what projects exist?') call list_linear_projects(query); the Notion list_projects tool is only for Notion task association\n- New issues go into the Orbit V2 project by default; to file one elsewhere, pass project=<name> to create_bug/create_feature\n- If a Linear project is not found, say so, offer the closest names from the error, and ask. Never guess from Notion data and never create projects\n\nUPDATING LINEAR ISSUES:\n- To change an existing issue (status, priority, assignee, project, title, labels) call update_linear_issue(issue_id, ...) with only the fields that change; call get_linear_issue(issue_id) first if unsure of its current state\n- Use append_description to add context; description REPLACES the whole description, so only use it when the user asks for a rewrite\n- Status, project, assignee and label names are resolved live and never created: if one is not found, tell the user the options returned in the error and ask which they meant\n- mark_bug_solved / mark_feature_shipped take the Linear issue_id (e.g. TOL-560), move it to Done and append a resolution note\n\nCODING AGENT PULL REQUESTS:\n- start_agent_pr(issue_id, user_requested=true) starts a coding agent that implements ONE Linear issue in the tolemy-lab repository and opens a pull request for review\n- Call it ONLY when the user explicitly asks for a PR or for the agent to fix an issue. Filing a bug is not such a request: never call it on your own and never offer it as an automatic next step\n- If asked for both ('file this and raise a PR'), create the issue first, then call it with the new identifier\n- It only queues the run: say it has started, that it takes several minutes, and that the PR link will appear on the Linear issue. Do not say a PR exists and do not post a workflow link\n- If started is false the issue already has an agent branch: say so and do not retry"
   }
 }
 EOF
@@ -202,6 +232,16 @@ StandardOutput=journal
 StandardError=journal
 HEALTHSVC_EOF
 
+# The client's credentials go in a root-only file, not in the unit: unit files are
+# world-readable and `systemctl show` prints their Environment= lines.
+( umask 077; cat > /etc/orby/slack-client.env << EOF
+SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+OPENAI_API_KEY=${LITELLM_API_KEY}
+OPENAI_BASE_URL=${LITELLM_BASE_URL}
+EOF
+)
+
 # Create Slack client systemd service with wait-for-MCP
 echo "Creating Slack client systemd service..."
 cat > /etc/systemd/system/slack-mcp-client.service << EOF
@@ -213,17 +253,16 @@ Requires=orby-mcp-server.service
 
 [Service]
 Type=simple
-# Wait for MCP server port to be open (TCP check - doesn't hang like curl to SSE)
-ExecStartPre=/bin/bash -c 'for i in \$(seq 1 30); do nc -z localhost 8080 && exit 0; sleep 2; done; exit 0'
+# Wait until the MCP server answers /health, not merely until its port is open: the port
+# opens seconds before the app can list its tools, and a client started in that gap
+# discovers none. (/health is a plain response, so curl does not hang as it does on SSE.)
+ExecStartPre=/bin/bash -c 'for i in \$(seq 1 45); do curl -sf -m 2 -o /dev/null http://localhost:8080/health && exit 0; sleep 2; done; exit 0'
 ExecStart=/usr/local/bin/slack-mcp-client --config /etc/orby/slack-client-config.json --metrics-port 9090
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-Environment=SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
-Environment=SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
-Environment=OPENAI_API_KEY=${LITELLM_API_KEY}
-Environment=OPENAI_BASE_URL=${LITELLM_BASE_URL}
+EnvironmentFile=/etc/orby/slack-client.env
 
 [Install]
 WantedBy=multi-user.target
@@ -244,10 +283,53 @@ echo "Pulling MCP server image: ${MCP_IMAGE}"
 docker image prune -f || true
 docker pull ${MCP_IMAGE}
 
-# Create RAG persist directory
-echo "Creating RAG persist directory..."
-mkdir -p "${RAG_PERSIST_DIR}"
-chmod 755 "${RAG_PERSIST_DIR}"
+# Create the directories the container mounts
+echo "Creating RAG and NewsWatch directories..."
+mkdir -p "${RAG_PERSIST_DIR}" "${NEWSWATCH_DIR}"
+chmod 755 "${RAG_PERSIST_DIR}" "${NEWSWATCH_DIR}"
+
+# The server's environment goes in a root-only file passed with --env-file. As `-e`
+# arguments every secret would sit on the `docker run` command line, where `ps`,
+# `systemctl status` and the world-readable unit file all show it.
+echo "Writing MCP server environment file..."
+( umask 077; cat > /etc/orby/mcp-server.env << EOF
+SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+NOTION_API_KEY=${NOTION_API_KEY}
+LITELLM_BASE_URL=${LITELLM_BASE_URL}
+LITELLM_API_KEY=${LITELLM_API_KEY}
+LITELLM_MODEL=${LITELLM_MODEL}
+LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+LANGFUSE_HOST=${LANGFUSE_HOST}
+BRAVE_API_KEY=${BRAVE_API_KEY}
+CONSENSUS_API_KEY=${CONSENSUS_API_KEY}
+XERO_CLIENT_ID=${XERO_CLIENT_ID}
+XERO_REDIRECT_URI=${XERO_REDIRECT_URI}
+RAG_PERSIST_DIR=/tmp/orby_chroma
+DISABLE_RAG=${DISABLE_RAG}
+ORBIT_AWS_REGION=${ORBIT_AWS_REGION}
+ORBIT_AWS_ACCESS_KEY_ID=${ORBIT_AWS_ACCESS_KEY_ID}
+ORBIT_AWS_SECRET_ACCESS_KEY=${ORBIT_AWS_SECRET_ACCESS_KEY}
+MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN}
+LINEAR_API_KEY=${LINEAR_API_KEY}
+LINEAR_TEAM_ID=${LINEAR_TEAM_ID}
+LINEAR_POLICY_GITHUB_TOKEN=${LINEAR_POLICY_GITHUB_TOKEN}
+GITHUB_APP_ID=${GITHUB_APP_ID}
+GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+LINEAR_ORBY_CLIENT_ID=${LINEAR_ORBY_CLIENT_ID}
+LINEAR_ORBY_CLIENT_SECRET=${LINEAR_ORBY_CLIENT_SECRET}
+STOCK_ORDERS_SHEET_ID=${STOCK_ORDERS_SHEET_ID}
+GOOGLE_SHEETS_CREDENTIALS_JSON=${GOOGLE_SHEETS_CREDENTIALS_JSON}
+NEWSWATCH_DB_PATH=/tmp/newswatch/newswatch.db
+NEWSWATCH_GCS_BACKUP_BUCKET=${NEWSWATCH_GCS_BACKUP_BUCKET}
+NEWSWATCH_SESSION_SECRET=${NEWSWATCH_SESSION_SECRET}
+NEWSWATCH_ALLOWED_DOMAINS=${NEWSWATCH_ALLOWED_DOMAINS}
+NEWSWATCH_GOOGLE_CLIENT_ID=${NEWSWATCH_GOOGLE_CLIENT_ID}
+NEWSWATCH_GOOGLE_CLIENT_SECRET=${NEWSWATCH_GOOGLE_CLIENT_SECRET}
+EOF
+)
 
 # Create MCP server systemd service (runs Docker container)
 echo "Creating MCP server systemd service..."
@@ -269,25 +351,8 @@ ExecStartPre=-/usr/bin/docker rm orby-mcp-server
 ExecStart=/usr/bin/docker run --rm --name orby-mcp-server \
   -p 127.0.0.1:8080:8080 \
   -v ${RAG_PERSIST_DIR}:/tmp/orby_chroma \
-  -e SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN} \
-  -e SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET} \
-  -e SLACK_APP_TOKEN=${SLACK_APP_TOKEN} \
-  -e NOTION_API_KEY=${NOTION_API_KEY} \
-  -e LITELLM_BASE_URL=${LITELLM_BASE_URL} \
-  -e LITELLM_API_KEY=${LITELLM_API_KEY} \
-  -e LITELLM_MODEL=${LITELLM_MODEL} \
-  -e LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY} \
-  -e LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY} \
-  -e LANGFUSE_HOST=${LANGFUSE_HOST} \
-  -e XERO_CLIENT_ID=${XERO_CLIENT_ID} \
-  -e XERO_REDIRECT_URI=${XERO_REDIRECT_URI} \
-  -e LINEAR_ORBY_CLIENT_ID=${LINEAR_ORBY_CLIENT_ID} \
-  -e LINEAR_ORBY_CLIENT_SECRET=${LINEAR_ORBY_CLIENT_SECRET} \
-  -e RAG_PERSIST_DIR=/tmp/orby_chroma \
-  -e DISABLE_RAG=${DISABLE_RAG} \
-  -e ORBIT_AWS_REGION=${ORBIT_AWS_REGION} \
-  -e ORBIT_AWS_ACCESS_KEY_ID=${ORBIT_AWS_ACCESS_KEY_ID} \
-  -e ORBIT_AWS_SECRET_ACCESS_KEY=${ORBIT_AWS_SECRET_ACCESS_KEY} \
+  -v ${NEWSWATCH_DIR}:/tmp/newswatch \
+  --env-file /etc/orby/mcp-server.env \
   ${MCP_IMAGE}
 
 ExecStop=/usr/bin/docker stop orby-mcp-server
