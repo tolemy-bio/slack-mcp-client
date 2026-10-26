@@ -72,7 +72,7 @@ func (f *OpenAIModelFactory) Create(config map[string]interface{}, logger *loggi
 
 	if promptCaching, _ := config["prompt_caching"].(bool); promptCaching {
 		opts = append(opts, openai.WithHTTPClient(newPromptCachingDoer(httputil.DefaultClient)))
-		logger.InfoKV("Prompt caching on: sending LiteLLM cache_control_injection_points", "model", modelName)
+		logger.InfoKV("Prompt caching on: marking cache breakpoints in agent prompts", "model", modelName)
 	}
 
 	if baseURL != "" {
