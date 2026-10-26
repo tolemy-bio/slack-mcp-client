@@ -81,8 +81,8 @@ type LLMProviderConfig struct {
 	BaseURL     string  `json:"baseUrl,omitempty"`
 	Temperature float64 `json:"temperature,omitempty"`
 	MaxTokens   int     `json:"maxTokens,omitempty"`
-	// Send LiteLLM's cache_control_injection_points with each chat completion. Only for the
-	// OpenAI-compatible provider behind a LiteLLM proxy: plain OpenAI rejects the field.
+	// Mark Anthropic cache breakpoints (cache_control on text blocks) in agent prompts. Only for
+	// the OpenAI-compatible provider behind a LiteLLM proxy in front of Claude.
 	PromptCaching bool `json:"promptCaching,omitempty"`
 }
 
